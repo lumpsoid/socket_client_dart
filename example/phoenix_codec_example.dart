@@ -48,7 +48,7 @@ class PhoenixCodec implements FrameCodec<PhoenixFrame> {
         event: list[3] as String,
         payload: (list[4] as Map<String, dynamic>?) ?? {},
       );
-    } catch (e) {
+    } on Exception catch (e) {
       throw FrameDecodeException('Bad Phoenix frame', raw: raw, cause: e);
     }
   }

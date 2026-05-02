@@ -1,13 +1,14 @@
+// example
+// ignore_for_file: avoid_print
+
 /// Comprehensive usage examples for the Socket Network System.
 ///
 /// Run with: dart run example/main.dart
 library;
 
-import 'package:socket_network_system/socket_network_system.dart';
+import 'package:socket_client/socket_client.dart';
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 1: Basic Connection & Messaging
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> basicExample() async {
   final client = SocketClient(
@@ -39,13 +40,11 @@ Future<void> basicExample() async {
   client.emit('chat.send', data: {'text': 'Hello, World!'});
 
   // Cleanup
-  await Future.delayed(const Duration(seconds: 5));
+  await Future<void>.delayed(const Duration(seconds: 5));
   await client.dispose();
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 2: With Authentication
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> authenticatedExample() async {
   final client = SocketClient(
@@ -77,9 +76,7 @@ Future<void> authenticatedExample() async {
   await client.connect();
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 3: Request-Response Pattern
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> requestResponseExample() async {
   final client = SocketClient(
@@ -105,9 +102,7 @@ Future<void> requestResponseExample() async {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 4: Channels (Pub/Sub)
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> channelExample() async {
   final client = SocketClient(
@@ -144,52 +139,46 @@ Future<void> channelExample() async {
   await chatRoom.leave();
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 5: Middleware Pipeline
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> middlewareExample() async {
-  final client = SocketClient(
-    config: ConnectionConfig.fromUrl('wss://api.myapp.com/ws'),
-  );
-
-  // --- Inbound middleware (processing incoming messages) ---
-
-  // Log all incoming messages
-  client.useInbound(SocketMiddleware.logging(logData: true));
-
-  // Deduplicate (server might send duplicates)
-  client.useInbound(SocketMiddleware.deduplicator(
-    window: const Duration(seconds: 5),
-  ));
-
-  // Filter out internal events from reaching handlers
-  client.useInbound(SocketMiddleware.eventFilter(
-    blockList: {'_internal.ping', '_internal.metrics'},
-  ));
-
-  // --- Outbound middleware (processing outgoing messages) ---
-
-  // Log outbound
-  client.useOutbound(SocketMiddleware.logging());
-
-  // Rate limit outbound to 10/sec
-  client.useOutbound(SocketMiddleware.rateLimiter(maxPerSecond: 10));
-
-  // Inject auth token
-  client.useOutbound(SocketMiddleware.authInjector(
-    tokenProvider: () async => 'my-token',
-  ));
-
-  // Add timestamps
-  client.useOutbound(SocketMiddleware.timestamper());
+  final client =
+      SocketClient(
+          config: ConnectionConfig.fromUrl('wss://api.myapp.com/ws'),
+        )
+        // --- Inbound middleware (processing incoming messages) ---
+        // Log all incoming messages
+        ..useInbound(SocketMiddleware.logging(logData: true))
+        // Deduplicate (server might send duplicates)
+        ..useInbound(
+          SocketMiddleware.deduplicator(
+            window: const Duration(seconds: 5),
+          ),
+        )
+        // Filter out internal events from reaching handlers
+        ..useInbound(
+          SocketMiddleware.eventFilter(
+            blockList: {'_internal.ping', '_internal.metrics'},
+          ),
+        )
+        // --- Outbound middleware (processing outgoing messages) ---
+        // Log outbound
+        ..useOutbound(SocketMiddleware.logging())
+        // Rate limit outbound to 10/sec
+        ..useOutbound(SocketMiddleware.rateLimiter(maxPerSecond: 10))
+        // Inject auth token
+        ..useOutbound(
+          SocketMiddleware.authInjector(
+            tokenProvider: () async => 'my-token',
+          ),
+        )
+        // Add timestamps
+        ..useOutbound(SocketMiddleware.timestamper());
 
   await client.connect();
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 6: Offline Message Queue
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> offlineQueueExample() async {
   final client = SocketClient(
@@ -216,7 +205,9 @@ Future<void> offlineQueueExample() async {
   });
 
   // Usage: buffer messages when offline
-  void safeSend(String event, Map<String, dynamic> data, {
+  void safeSend(
+    String event,
+    Map<String, dynamic> data, {
     MessagePriority priority = MessagePriority.normal,
   }) {
     if (client.isConnected) {
@@ -228,12 +219,12 @@ Future<void> offlineQueueExample() async {
   }
 
   safeSend('analytics.event', {'action': 'button_click'});
-  safeSend('order.submit', {'orderId': '999'}, priority: MessagePriority.critical);
+  safeSend('order.submit', {
+    'orderId': '999',
+  }, priority: MessagePriority.critical);
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 7: Health Monitoring
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> healthMonitorExample() async {
   final metrics = SocketMetrics();
@@ -268,9 +259,7 @@ Future<void> healthMonitorExample() async {
   print(metrics.toMap());
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 8: Network-Aware Reconnection (Flutter/Mobile)
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> networkAwareExample() async {
   final client = SocketClient(
@@ -305,42 +294,41 @@ Future<void> networkAwareExample() async {
   // → reconnector automatically calls client.connect()
 }
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 9: Custom Middleware — Message Encryption
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> customMiddlewareExample() async {
-  final client = SocketClient(
-    config: ConnectionConfig.fromUrl('wss://api.myapp.com/ws'),
-  );
-
-  // Encrypt outbound payloads
-  client.useOutbound((message) async {
-    // In production, use a real encryption library
-    final encrypted = _fakeEncrypt(message.data.toString());
-    return SocketMessage(
-      id: message.id,
-      event: message.event,
-      data: {'_encrypted': encrypted},
-      timestamp: message.timestamp,
-      replyTo: message.replyTo,
-    );
-  });
-
-  // Decrypt inbound payloads
-  client.useInbound((message) async {
-    if (message.data.containsKey('_encrypted')) {
-      final decrypted = _fakeDecrypt(message.data['_encrypted'] as String);
-      return SocketMessage(
-        id: message.id,
-        event: message.event,
-        data: {'content': decrypted},
-        timestamp: message.timestamp,
-        replyTo: message.replyTo,
-      );
-    }
-    return message;
-  });
+  final client =
+      SocketClient(
+          config: ConnectionConfig.fromUrl('wss://api.myapp.com/ws'),
+        )
+        // Encrypt outbound payloads
+        ..useOutbound((message) async {
+          // In production, use a real encryption library
+          final encrypted = _fakeEncrypt(message.data.toString());
+          return SocketMessage(
+            id: message.id,
+            event: message.event,
+            data: {'_encrypted': encrypted},
+            timestamp: message.timestamp,
+            replyTo: message.replyTo,
+          );
+        })
+        // Decrypt inbound payloads
+        ..useInbound((message) async {
+          if (message.data.containsKey('_encrypted')) {
+            final decrypted = _fakeDecrypt(
+              message.data['_encrypted'] as String,
+            );
+            return SocketMessage(
+              id: message.id,
+              event: message.event,
+              data: {'content': decrypted},
+              timestamp: message.timestamp,
+              replyTo: message.replyTo,
+            );
+          }
+          return message;
+        });
 
   await client.connect();
 }
@@ -348,9 +336,7 @@ Future<void> customMiddlewareExample() async {
 String _fakeEncrypt(String data) => 'ENC:$data';
 String _fakeDecrypt(String data) => data.replaceFirst('ENC:', '');
 
-// ═══════════════════════════════════════════════════════════════
 // EXAMPLE 10: Full Production Setup
-// ═══════════════════════════════════════════════════════════════
 
 Future<void> productionExample() async {
   // 1. Configure
@@ -379,19 +365,19 @@ Future<void> productionExample() async {
   );
 
   // 2. Create client with custom logger
-  final client = SocketClient(
-    config: config,
-    logger: const SocketLogger(
-      tag: 'App',
-      minLevel: LogLevel.info,
-    ),
-  );
-
-  // 3. Middleware pipeline
-  client.useInbound(SocketMiddleware.logging());
-  client.useInbound(SocketMiddleware.deduplicator());
-  client.useOutbound(SocketMiddleware.rateLimiter(maxPerSecond: 20));
-  client.useOutbound(SocketMiddleware.timestamper());
+  final client =
+      SocketClient(
+          config: config,
+          logger: const SocketLogger(
+            tag: 'App',
+            minLevel: LogLevel.info,
+          ),
+        )
+        // 3. Middleware pipeline
+        ..useInbound(SocketMiddleware.logging())
+        ..useInbound(SocketMiddleware.deduplicator())
+        ..useOutbound(SocketMiddleware.rateLimiter(maxPerSecond: 20))
+        ..useOutbound(SocketMiddleware.timestamper());
 
   // 4. Metrics & health
   final metrics = SocketMetrics();
@@ -449,9 +435,7 @@ Future<void> productionExample() async {
   // });
 }
 
-// ═══════════════════════════════════════════════════════════════
 // Main
-// ═══════════════════════════════════════════════════════════════
 
 void main() async {
   print('Socket Network System — Examples\n');

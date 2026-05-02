@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'core/socket_connection.dart';
-import 'models/connection_config.dart';
-import 'models/connection_state.dart';
-import 'protocol/message_protocol.dart';
-import 'protocol/channel.dart';
-import 'utils/logger.dart';
+import 'package:socket_client/src/channel.dart';
+import 'package:socket_client/src/connection_config.dart';
+import 'package:socket_client/src/connection_state.dart';
+import 'package:socket_client/src/logger.dart';
+import 'package:socket_client/src/message_protocol.dart';
+import 'package:socket_client/src/socket_connection.dart';
 
 /// High-level client that composes connection, protocol, and channels.
 ///
@@ -24,23 +24,13 @@ import 'utils/logger.dart';
 /// client.emit('chat.send', data: {'text': 'Hello!'});
 /// ```
 class SocketClient {
-  final ConnectionConfig config;
-  final SocketLogger _logger;
-
-  late final SocketConnection _connection;
-  late final MessageProtocol _protocol;
-  late final ChannelManager _channelManager;
-
-  final List<StreamSubscription> _subscriptions = [];
-  bool _disposed = false;
-
   SocketClient({
     required this.config,
     SocketLogger? logger,
   }) : _logger = logger ?? const SocketLogger(tag: 'SocketClient') {
     _connection = SocketConnection(
       config: config,
-      logger: SocketLogger(tag: 'Connection'),
+      logger: const SocketLogger(tag: 'Connection'),
     );
 
     _protocol = MessageProtocol(
@@ -55,8 +45,15 @@ class SocketClient {
 
     _wireUp();
   }
+  final ConnectionConfig config;
+  final SocketLogger _logger;
 
-  // ─── Public Getters ──────────────────────────────────────────
+  late final SocketConnection _connection;
+  late final MessageProtocol _protocol;
+  late final ChannelManager _channelManager;
+
+  final List<StreamSubscription> _subscriptions = [];
+  bool _disposed = false;
 
   /// Current connection state.
   SocketConnectionState get state => _connection.state;
@@ -79,7 +76,7 @@ class SocketClient {
   /// Connection uptime.
   Duration? get uptime => _connection.connectionUptime;
 
-  // ─── Connection Lifecycle ────────────────────────────────────
+  // Connection Lifecycle
 
   /// Connect to the server.
   Future<void> connect() async {
@@ -169,12 +166,8 @@ class SocketClient {
     _protocol.useOutbound(middleware);
   }
 
-  // ─── Channels ────────────────────────────────────────────────
-
   /// Get or create a channel.
   SocketChannel channel(String name) => _channelManager.channel(name);
-
-  // ─── Lifecycle ───────────────────────────────────────────────
 
   /// Release all resources. The client cannot be reused after this.
   Future<void> dispose() async {
@@ -193,32 +186,30 @@ class SocketClient {
     _logger.info('Client disposed');
   }
 
-  // ─── Internal Wiring ─────────────────────────────────────────
-
   void _wireUp() {
     // Route raw text messages through the protocol layer
-    _subscriptions.add(
-      _connection.messageStream.listen((data) {
-        if (data is String) {
-          _protocol.handleRawMessage(data);
-        }
-      }),
-    );
-
-    // Auto-rejoin channels on reconnect
-    _subscriptions.add(
-      _connection.stateStream.listen((state) {
-        if (state == SocketConnectionState.connected) {
-          _channelManager.rejoinAll();
-
-          // Re-authenticate on reconnect
-          if (config.auth != null &&
-              config.auth!.transport == AuthTransport.message) {
-            _sendAuthMessage();
+    _subscriptions
+      ..add(
+        _connection.messageStream.listen((data) async {
+          if (data is String) {
+            await _protocol.handleRawMessage(data);
           }
-        }
-      }),
-    );
+        }),
+      )
+      // Auto-rejoin channels on reconnect
+      ..add(
+        _connection.stateStream.listen((state) async {
+          if (state == SocketConnectionState.connected) {
+            await _channelManager.rejoinAll();
+
+            // Re-authenticate on reconnect
+            if (config.auth != null &&
+                config.auth!.transport == AuthTransport.message) {
+              await _sendAuthMessage();
+            }
+          }
+        }),
+      );
   }
 
   Future<void> _authenticateConnection() async {
@@ -230,7 +221,7 @@ class SocketClient {
         // Headers are set in config, but may need refreshing
         final prefix = auth.type == AuthType.bearer ? 'Bearer ' : '';
         config.headers?[auth.headerName] = '$prefix$token';
-        break;
+
       case AuthTransport.queryParam:
         // Append token to URI
         // Handled by config.uri modification upstream

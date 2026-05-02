@@ -1,26 +1,5 @@
 /// Configuration for the socket connection.
 class ConnectionConfig {
-  /// WebSocket URI (ws:// or wss://).
-  final Uri uri;
-
-  /// Optional HTTP headers for the handshake.
-  final Map<String, dynamic>? headers;
-
-  /// Optional sub-protocols.
-  final Iterable<String>? protocols;
-
-  /// Timeout for the initial connection attempt.
-  final Duration connectTimeout;
-
-  /// Heartbeat / keep-alive configuration.
-  final HeartbeatConfig heartbeat;
-
-  /// Reconnection configuration.
-  final ReconnectConfig reconnect;
-
-  /// Authentication configuration.
-  final AuthConfig? auth;
-
   const ConnectionConfig({
     required this.uri,
     this.headers,
@@ -52,6 +31,27 @@ class ConnectionConfig {
     );
   }
 
+  /// WebSocket URI (ws:// or wss://).
+  final Uri uri;
+
+  /// Optional HTTP headers for the handshake.
+  final Map<String, dynamic>? headers;
+
+  /// Optional sub-protocols.
+  final Iterable<String>? protocols;
+
+  /// Timeout for the initial connection attempt.
+  final Duration connectTimeout;
+
+  /// Heartbeat / keep-alive configuration.
+  final HeartbeatConfig heartbeat;
+
+  /// Reconnection configuration.
+  final ReconnectConfig reconnect;
+
+  /// Authentication configuration.
+  final AuthConfig? auth;
+
   ConnectionConfig copyWith({
     Uri? uri,
     Map<String, dynamic>? headers,
@@ -75,28 +75,20 @@ class ConnectionConfig {
 
 /// Heartbeat / ping-pong keep-alive settings.
 class HeartbeatConfig {
-  final bool enabled;
-  final Duration interval;
-  final Duration pongTimeout;
-  final String pingMessage;
-
   const HeartbeatConfig({
     this.enabled = true,
     this.interval = const Duration(seconds: 30),
     this.pongTimeout = const Duration(seconds: 10),
     this.pingMessage = 'ping',
   });
+  final bool enabled;
+  final Duration interval;
+  final Duration pongTimeout;
+  final String pingMessage;
 }
 
 /// Reconnection behavior settings.
 class ReconnectConfig {
-  final bool enabled;
-  final int maxAttempts;
-  final Duration initialDelay;
-  final Duration maxDelay;
-  final double multiplier;
-  final bool jitter;
-
   const ReconnectConfig({
     this.enabled = true,
     this.maxAttempts = 10,
@@ -105,10 +97,28 @@ class ReconnectConfig {
     this.multiplier = 2.0,
     this.jitter = true,
   });
+  final bool enabled;
+  final int maxAttempts;
+  final Duration initialDelay;
+  final Duration maxDelay;
+  final double multiplier;
+  final bool jitter;
 }
 
 /// Authentication configuration for the socket.
 class AuthConfig {
+  const AuthConfig({
+    this.type = AuthType.bearer,
+    this.token,
+    this.tokenProvider,
+    this.transport = AuthTransport.header,
+    this.headerName = 'Authorization',
+    this.queryParamName = 'token',
+  }) : assert(
+         token != null || tokenProvider != null,
+         'Either token or tokenProvider must be provided',
+       );
+
   /// Authentication type.
   final AuthType type;
 
@@ -126,18 +136,6 @@ class AuthConfig {
 
   /// Query parameter name when using [AuthTransport.queryParam].
   final String queryParamName;
-
-  const AuthConfig({
-    this.type = AuthType.bearer,
-    this.token,
-    this.tokenProvider,
-    this.transport = AuthTransport.header,
-    this.headerName = 'Authorization',
-    this.queryParamName = 'token',
-  }) : assert(
-          token != null || tokenProvider != null,
-          'Either token or tokenProvider must be provided',
-        );
 
   /// Resolves the current token, calling the provider if needed.
   Future<String> resolveToken() async {

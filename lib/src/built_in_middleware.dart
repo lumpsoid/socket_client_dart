@@ -3,8 +3,8 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
-import '../protocol/message_protocol.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/logger.dart';
+import 'package:socket_client/src/message_protocol.dart';
 
 /// Collection of production-ready middleware factories.
 class SocketMiddleware {
@@ -174,8 +174,7 @@ class SocketMiddleware {
       final now = DateTime.now();
 
       // Purge old entries
-      seen.removeWhere(
-          (_, time) => now.difference(time) > window);
+      seen.removeWhere((_, time) => now.difference(time) > window);
 
       if (seen.containsKey(message.id)) {
         return null; // Duplicate

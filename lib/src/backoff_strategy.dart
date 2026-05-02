@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import '../models/connection_config.dart';
+import 'package:socket_client/src/connection_config.dart';
 
 /// Strategy for computing reconnection delays.
 abstract class BackoffStrategy {
@@ -13,11 +13,10 @@ abstract class BackoffStrategy {
 /// delay = min(maxDelay, initialDelay * multiplier^attempt)
 /// With jitter: delay = random(0, delay)
 class ExponentialBackoff implements BackoffStrategy {
+  ExponentialBackoff({required this.config});
   final ReconnectConfig config;
   final Random _random = Random();
   int _attempt = 0;
-
-  ExponentialBackoff({required this.config});
 
   @override
   Duration nextDelay() {
@@ -25,7 +24,10 @@ class ExponentialBackoff implements BackoffStrategy {
         config.initialDelay.inMilliseconds *
         pow(config.multiplier, _attempt).toDouble();
 
-    final cappedMs = min(exponentialMs, config.maxDelay.inMilliseconds.toDouble());
+    final cappedMs = min(
+      exponentialMs,
+      config.maxDelay.inMilliseconds.toDouble(),
+    );
 
     final delayMs = config.jitter
         ? (_random.nextDouble() * cappedMs).round()
@@ -43,21 +45,20 @@ class ExponentialBackoff implements BackoffStrategy {
 
 /// Linear backoff: delay = initialDelay + (step * attempt).
 class LinearBackoff implements BackoffStrategy {
-  final Duration initialDelay;
-  final Duration step;
-  final Duration maxDelay;
-  int _attempt = 0;
-
   LinearBackoff({
     this.initialDelay = const Duration(seconds: 1),
     this.step = const Duration(seconds: 2),
     this.maxDelay = const Duration(seconds: 60),
   });
+  final Duration initialDelay;
+  final Duration step;
+  final Duration maxDelay;
+  int _attempt = 0;
 
   @override
   Duration nextDelay() {
-    final delayMs = initialDelay.inMilliseconds +
-        (step.inMilliseconds * _attempt);
+    final delayMs =
+        initialDelay.inMilliseconds + (step.inMilliseconds * _attempt);
     _attempt++;
     return Duration(
       milliseconds: min(delayMs, maxDelay.inMilliseconds),

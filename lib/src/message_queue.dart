@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:collection';
 
-import '../protocol/message_protocol.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/logger.dart';
+import 'package:socket_client/src/message_protocol.dart';
 
 /// Priority levels for queued messages.
 enum MessagePriority {
@@ -21,12 +21,6 @@ enum MessagePriority {
 
 /// A queued message with metadata for delivery tracking.
 class QueuedMessage {
-  final SocketMessage message;
-  final MessagePriority priority;
-  final DateTime queuedAt;
-  final Duration? ttl;
-  int attempts;
-
   QueuedMessage({
     required this.message,
     this.priority = MessagePriority.normal,
@@ -34,6 +28,11 @@ class QueuedMessage {
     this.ttl,
     this.attempts = 0,
   }) : queuedAt = queuedAt ?? DateTime.now();
+  final SocketMessage message;
+  final MessagePriority priority;
+  final DateTime queuedAt;
+  final Duration? ttl;
+  int attempts;
 
   bool get isExpired {
     if (ttl == null) return false;
@@ -46,13 +45,6 @@ class QueuedMessage {
 /// Buffers outbound messages when the connection is down,
 /// and flushes them (in priority order) when connectivity resumes.
 class MessageQueue {
-  final int maxSize;
-  final SocketLogger _logger;
-  final _queue = SplayTreeMap<int, Queue<QueuedMessage>>();
-  int _totalSize = 0;
-
-  final _droppedController = StreamController<QueuedMessage>.broadcast();
-
   MessageQueue({
     this.maxSize = 1000,
     SocketLogger? logger,
@@ -62,6 +54,12 @@ class MessageQueue {
       _queue[p.index] = Queue<QueuedMessage>();
     }
   }
+  final int maxSize;
+  final SocketLogger _logger;
+  final _queue = SplayTreeMap<int, Queue<QueuedMessage>>();
+  int _totalSize = 0;
+
+  final _droppedController = StreamController<QueuedMessage>.broadcast();
 
   int get length => _totalSize;
   bool get isEmpty => _totalSize == 0;
@@ -71,7 +69,8 @@ class MessageQueue {
   Stream<QueuedMessage> get droppedMessages => _droppedController.stream;
 
   /// Enqueue a message for later delivery.
-  bool enqueue(SocketMessage message, {
+  bool enqueue(
+    SocketMessage message, {
     MessagePriority priority = MessagePriority.normal,
     Duration? ttl,
   }) {
@@ -94,7 +93,9 @@ class MessageQueue {
 
     _queue[priority.index]!.add(queued);
     _totalSize++;
-    _logger.debug('Queued: ${message.event} (priority: ${priority.name}, total: $_totalSize)');
+    _logger.debug(
+      'Queued: ${message.event} (priority: ${priority.name}, total: $_totalSize)',
+    );
     return true;
   }
 
@@ -160,7 +161,9 @@ class MessageQueue {
         final evicted = _queue[i]!.removeFirst();
         _totalSize--;
         _droppedController.add(evicted);
-        _logger.debug('Evicted: ${evicted.message.event} (${MessagePriority.values[i].name})');
+        _logger.debug(
+          'Evicted: ${evicted.message.event} (${MessagePriority.values[i].name})',
+        );
         return true;
       }
     }

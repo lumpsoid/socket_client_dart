@@ -1,26 +1,14 @@
 import 'dart:async';
 import 'dart:convert';
 
-import '../models/connection_state.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/connection_state.dart';
+import 'package:socket_client/src/logger.dart';
+
+/// Convenience typedef.
+typedef VoidCallback = void Function();
 
 /// A typed message envelope used by the protocol layer.
 class SocketMessage {
-  /// Unique message ID for correlation.
-  final String id;
-
-  /// Message event/type name (e.g., 'chat.send', 'user.joined').
-  final String event;
-
-  /// Payload data.
-  final Map<String, dynamic> data;
-
-  /// Timestamp of creation.
-  final DateTime timestamp;
-
-  /// Optional correlation ID for request-response patterns.
-  final String? replyTo;
-
   SocketMessage({
     required this.id,
     required this.event,
@@ -60,6 +48,21 @@ class SocketMessage {
     }
   }
 
+  /// Unique message ID for correlation.
+  final String id;
+
+  /// Message event/type name (e.g., 'chat.send', 'user.joined').
+  final String event;
+
+  /// Payload data.
+  final Map<String, dynamic> data;
+
+  /// Timestamp of creation.
+  final DateTime timestamp;
+
+  /// Optional correlation ID for request-response patterns.
+  final String? replyTo;
+
   /// Serialize to a JSON string.
   String toJson() {
     return json.encode({
@@ -85,8 +88,8 @@ class SocketMessage {
 typedef MessageHandler = FutureOr<void> Function(SocketMessage message);
 
 /// Middleware that can intercept, transform, or block messages.
-typedef MessageMiddleware = FutureOr<SocketMessage?> Function(
-    SocketMessage message);
+typedef MessageMiddleware =
+    FutureOr<SocketMessage?> Function(SocketMessage message);
 
 /// Protocol layer that adds structured messaging on top of raw socket I/O.
 ///
@@ -97,6 +100,8 @@ typedef MessageMiddleware = FutureOr<SocketMessage?> Function(
 /// - Automatic serialization/deserialization
 /// - Message acknowledgement tracking
 class MessageProtocol {
+  MessageProtocol({SocketLogger? logger})
+    : _logger = logger ?? const SocketLogger(tag: 'Protocol');
   final SocketLogger _logger;
 
   final Map<String, List<MessageHandler>> _handlers = {};
@@ -105,9 +110,6 @@ class MessageProtocol {
   final Map<String, Completer<SocketMessage>> _pendingRequests = {};
 
   final _allMessagesController = StreamController<SocketMessage>.broadcast();
-
-  MessageProtocol({SocketLogger? logger})
-      : _logger = logger ?? const SocketLogger(tag: 'Protocol');
 
   /// Stream of all decoded inbound messages.
   Stream<SocketMessage> get messages => _allMessagesController.stream;
@@ -237,36 +239,36 @@ class MessageProtocol {
     Timer(timeout, () {
       if (!completer.isCompleted) {
         _pendingRequests.remove(message.id);
-        completer.completeError(SocketError(
-          type: SocketErrorType.timeout,
-          message: 'Request ${message.id} timed out after ${timeout.inSeconds}s',
-          timestamp: DateTime.now(),
-        ));
+        completer.completeError(
+          SocketError(
+            type: SocketErrorType.timeout,
+            message:
+                'Request ${message.id} timed out after ${timeout.inSeconds}s',
+            timestamp: DateTime.now(),
+          ),
+        );
       }
     });
 
     return completer.future;
   }
 
-  // ─── Cleanup ─────────────────────────────────────────────────
-
-  void dispose() {
+  Future<void> dispose() async {
     _handlers.clear();
     _inboundMiddleware.clear();
     _outboundMiddleware.clear();
     for (final completer in _pendingRequests.values) {
       if (!completer.isCompleted) {
-        completer.completeError(SocketError(
-          type: SocketErrorType.stream,
-          message: 'Protocol disposed while request pending',
-          timestamp: DateTime.now(),
-        ));
+        completer.completeError(
+          SocketError(
+            type: SocketErrorType.stream,
+            message: 'Protocol disposed while request pending',
+            timestamp: DateTime.now(),
+          ),
+        );
       }
     }
     _pendingRequests.clear();
-    _allMessagesController.close();
+    await _allMessagesController.close();
   }
 }
-
-/// Convenience typedef.
-typedef VoidCallback = void Function();

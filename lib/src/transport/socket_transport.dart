@@ -2,28 +2,28 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:socket_client/src/backoff_strategy.dart';
-import 'package:socket_client/src/connection_config.dart';
-import 'package:socket_client/src/connection_state.dart';
-import 'package:socket_client/src/logger.dart';
+import 'package:socket_client/src/transport/backoff_strategy.dart';
+import 'package:socket_client/src/transport/connection_config.dart';
+import 'package:socket_client/src/transport/connection_state.dart';
+import 'package:socket_client/src/util/logger.dart';
 
-/// Production-grade WebSocket connection manager.
+/// Raw WebSocket transport: reconnect, heartbeat, TLS. No protocol assumptions.
 ///
-/// Features:
-/// - Automatic reconnection with exponential backoff + jitter
-/// - Heartbeat/ping-pong keep-alive
-/// - Connection state machine
-/// - Graceful shutdown
-/// - SSL/TLS support
-/// - Connection timeout handling
-/// - Thread-safe state transitions
-class SocketConnection {
-  SocketConnection({
+/// Speaks [String] and [Uint8List] only. All framing/parsing belongs upstream.
+///
+/// ```dart
+/// final transport = SocketTransport(config: ConnectionConfig.fromUrl('wss://...'));
+/// transport.textStream.listen((raw) => router.ingest(raw));
+/// await transport.connect();
+/// transport.sendText('{"event":"ping"}');
+/// ```
+class SocketTransport {
+  SocketTransport({
     required ConnectionConfig config,
     SocketLogger? logger,
     BackoffStrategy? backoff,
   }) : _config = config,
-       _logger = logger ?? const SocketLogger(tag: 'SocketConnection'),
+       _logger = logger ?? const SocketLogger(tag: 'Transport'),
        _backoff = backoff ?? ExponentialBackoff(config: config.reconnect);
 
   final ConnectionConfig _config;
@@ -34,100 +34,84 @@ class SocketConnection {
   Timer? _heartbeatTimer;
   Timer? _heartbeatTimeoutTimer;
   Timer? _reconnectTimer;
+  Completer<void>? _connectionLock;
+
   int _reconnectAttempts = 0;
   bool _intentionalClose = false;
   DateTime? _connectedAt;
   DateTime? _lastMessageAt;
 
-  Completer<void>? _connectionLock;
-
-  final _stateController = StreamController<SocketConnectionState>.broadcast();
-  final _messageController = StreamController<dynamic>.broadcast();
-  final _errorController = StreamController<SocketError>.broadcast();
-  final _rawBytesController = StreamController<Uint8List>.broadcast();
-
   SocketConnectionState _state = SocketConnectionState.disconnected;
 
-  /// Current connection state.
-  SocketConnectionState get state => _state;
+  final _stateController = StreamController<SocketConnectionState>.broadcast();
+  final _textController = StreamController<String>.broadcast();
+  final _binaryController = StreamController<Uint8List>.broadcast();
+  final _errorController = StreamController<SocketError>.broadcast();
 
-  /// Whether the socket is currently connected and ready.
+  //Public API
+
+  SocketConnectionState get state => _state;
   bool get isConnected => _state == SocketConnectionState.connected;
 
-  /// Stream of connection state changes.
+  /// Broadcast stream of connection state transitions.
   Stream<SocketConnectionState> get stateStream => _stateController.stream;
 
-  /// Stream of decoded messages (String or List<int>).
-  Stream<dynamic> get messageStream => _messageController.stream;
+  /// Broadcast stream of raw inbound text frames.
+  Stream<String> get textStream => _textController.stream;
 
-  /// Stream of raw binary messages.
-  Stream<Uint8List> get rawBytesStream => _rawBytesController.stream;
+  /// Broadcast stream of raw inbound binary frames.
+  Stream<Uint8List> get binaryStream => _binaryController.stream;
 
-  /// Stream of connection errors.
+  /// Broadcast stream of transport-level errors.
   Stream<SocketError> get errorStream => _errorController.stream;
 
-  /// Timestamp of when the connection was established.
   DateTime? get connectedAt => _connectedAt;
-
-  /// Timestamp of the last received message.
   DateTime? get lastMessageAt => _lastMessageAt;
 
-  /// Duration of the current connection session.
   Duration? get connectionUptime {
     if (_connectedAt == null) return null;
     return DateTime.now().difference(_connectedAt!);
   }
 
-  /// Establishes the WebSocket connection.
-  Future<void> connect() async {
-    // Fast path: already connected with same token
-    if (_state == SocketConnectionState.connected) {
-      return;
-    }
+  //Lifecycle
 
-    // Fast path: connection already in progress — wait for it
+  Future<void> connect() async {
+    if (_state == SocketConnectionState.connected) return;
+
+    // If connection already in progress, join the existing attempt.
     if (_connectionLock != null) {
       return _connectionLock!.future;
     }
 
-    // Slow path: must acquire lock and connect
     _connectionLock = Completer<void>();
     try {
-      if (_state == SocketConnectionState.connected) {
-        await disconnect();
-      }
       _intentionalClose = false;
       await _doConnect();
-      _connectionLock?.complete(null);
-      return;
-    } catch (e) {
-      _connectionLock?.completeError(e);
+      _connectionLock!.complete();
+    } catch (e, st) {
+      _connectionLock!.completeError(e, st);
       rethrow;
     } finally {
       _connectionLock = null;
     }
   }
 
-  /// Sends a text message over the socket.
-  void sendText(String message) {
+  void sendText(String frame) {
     _assertConnected();
-    _socket!.add(message);
-    _logger.debug('Sent text: ${message.length} chars');
+    _socket!.add(frame);
+    _logger.debug('TX text ${frame.length}b');
   }
 
-  /// Sends binary data over the socket.
-  void sendBytes(List<int> bytes) {
+  void sendBytes(Uint8List frame) {
     _assertConnected();
-    _socket!.add(bytes);
-    _logger.debug('Sent binary: ${bytes.length} bytes');
+    _socket!.add(frame);
+    _logger.debug('TX binary ${frame.length}b');
   }
 
-  /// Gracefully closes the connection.
   Future<void> disconnect({int? closeCode, String? closeReason}) async {
     _intentionalClose = true;
     _cancelTimers();
     _transitionTo(SocketConnectionState.disconnecting);
-
     try {
       await _socket?.close(
         closeCode ?? WebSocketStatus.normalClosure,
@@ -137,33 +121,31 @@ class SocketConnection {
       _logger.warn('Error during disconnect: $e');
     } finally {
       _socket = null;
-      _transitionTo(SocketConnectionState.disconnected);
       _connectedAt = null;
+      _transitionTo(SocketConnectionState.disconnected);
     }
   }
 
-  /// Releases all resources. Instance should not be reused after this.
   Future<void> dispose() async {
     await disconnect();
-    await _stateController.close();
-    await _messageController.close();
-    await _errorController.close();
-    await _rawBytesController.close();
-    _logger.info('Disposed');
+    await Future.wait([
+      _stateController.close(),
+      _textController.close(),
+      _binaryController.close(),
+      _errorController.close(),
+    ]);
+    _logger.info('Transport disposed');
   }
 
-  // ─── Connection Logic ────────────────────────────────────────
+  //Connection
 
   Future<void> _doConnect() async {
     _transitionTo(SocketConnectionState.connecting);
-
     try {
-      final uri = _config.uri;
-      _logger.info('Connecting to $uri ...');
-
+      _logger.info('Connecting to ${_config.uri}');
       _socket =
           await WebSocket.connect(
-            uri.toString(),
+            _config.uri.toString(),
             headers: _config.headers,
             protocols: _config.protocols,
           ).timeout(
@@ -176,14 +158,12 @@ class SocketConnection {
       _reconnectAttempts = 0;
       _backoff.reset();
       _connectedAt = DateTime.now();
-
       _transitionTo(SocketConnectionState.connected);
-      _logger.info('Connected to $uri');
-
+      _logger.info('Connected');
       _startHeartbeat();
       _listenToSocket();
     } on TimeoutException catch (e) {
-      _handleConnectionFailure(
+      _handleFailure(
         SocketError(
           type: SocketErrorType.timeout,
           message: e.message ?? 'Connection timeout',
@@ -191,7 +171,7 @@ class SocketConnection {
         ),
       );
     } on SocketException catch (e) {
-      _handleConnectionFailure(
+      _handleFailure(
         SocketError(
           type: SocketErrorType.network,
           message: 'Socket error: ${e.message}',
@@ -200,7 +180,7 @@ class SocketConnection {
         ),
       );
     } on WebSocketException catch (e) {
-      _handleConnectionFailure(
+      _handleFailure(
         SocketError(
           type: SocketErrorType.protocol,
           message: 'WebSocket error: ${e.message}',
@@ -209,7 +189,7 @@ class SocketConnection {
         ),
       );
     } on HandshakeException catch (e) {
-      _handleConnectionFailure(
+      _handleFailure(
         SocketError(
           type: SocketErrorType.tls,
           message: 'TLS handshake failed: ${e.message}',
@@ -218,7 +198,7 @@ class SocketConnection {
         ),
       );
     } catch (e, st) {
-      _handleConnectionFailure(
+      _handleFailure(
         SocketError(
           type: SocketErrorType.unknown,
           message: 'Unexpected error: $e',
@@ -235,18 +215,15 @@ class SocketConnection {
       (data) {
         _lastMessageAt = DateTime.now();
         _resetHeartbeatTimeout();
-
         if (data is String) {
-          _messageController.add(data);
+          _textController.add(data);
         } else if (data is List<int>) {
-          final bytes = Uint8List.fromList(data);
-          _rawBytesController.add(bytes);
-          _messageController.add(bytes);
+          _binaryController.add(Uint8List.fromList(data));
         }
       },
-      onError: (Exception error, StackTrace stackTrace) {
+      onError: (Object error, StackTrace stackTrace) {
         _logger.error('Stream error: $error');
-        _errorController.add(
+        _emitError(
           SocketError(
             type: SocketErrorType.stream,
             message: 'Stream error: $error',
@@ -258,11 +235,10 @@ class SocketConnection {
       },
       onDone: () {
         _logger.info(
-          'Connection closed: code=${_socket?.closeCode}, '
+          'Connection closed: code=${_socket?.closeCode} '
           'reason=${_socket?.closeReason}',
         );
         _cancelTimers();
-
         if (!_intentionalClose) {
           _transitionTo(SocketConnectionState.reconnecting);
           _scheduleReconnect();
@@ -274,52 +250,45 @@ class SocketConnection {
     );
   }
 
-  // ─── Heartbeat / Keep-Alive ──────────────────────────────────
+  //Heartbeat
 
   void _startHeartbeat() {
     if (!_config.heartbeat.enabled) return;
-
     _heartbeatTimer?.cancel();
     _heartbeatTimer = Timer.periodic(_config.heartbeat.interval, (_) {
-      if (isConnected) {
-        try {
-          _socket!.add(_config.heartbeat.pingMessage);
-          _logger.debug('Heartbeat ping sent');
-          _startHeartbeatTimeout();
-        } on Exception catch (e) {
-          _logger.error('Failed to send heartbeat: $e');
-        }
+      if (!isConnected) return;
+      try {
+        _socket!.add(_config.heartbeat.pingMessage);
+        _logger.debug('Heartbeat ping');
+        _startHeartbeatTimeout();
+      } catch (e) {
+        _logger.error('Failed to send heartbeat: $e');
       }
     });
   }
 
   void _startHeartbeatTimeout() {
     _heartbeatTimeoutTimer?.cancel();
-    _heartbeatTimeoutTimer = Timer(_config.heartbeat.pongTimeout, () {
-      _logger.warn('Heartbeat pong timeout — closing connection');
-      _errorController.add(
+    _heartbeatTimeoutTimer = Timer(_config.heartbeat.pongTimeout, () async {
+      _logger.warn('Heartbeat pong timeout');
+      _emitError(
         SocketError(
           type: SocketErrorType.heartbeatTimeout,
-          message:
-              'No pong received within'
-              ' ${_config.heartbeat.pongTimeout.inSeconds}s',
+          message: 'No pong within ${_config.heartbeat.pongTimeout.inSeconds}s',
           timestamp: DateTime.now(),
         ),
       );
-      _socket?.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
+      await _socket?.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
     });
   }
 
-  void _resetHeartbeatTimeout() {
-    _heartbeatTimeoutTimer?.cancel();
-  }
+  void _resetHeartbeatTimeout() => _heartbeatTimeoutTimer?.cancel();
 
-  // ─── Reconnection ───────────────────────────────────────────
+  //Reconnect
 
-  void _handleConnectionFailure(SocketError error) {
+  void _handleFailure(SocketError error) {
     _logger.error('Connection failure: ${error.message}');
-    _errorController.add(error);
-
+    _emitError(error);
     if (!_intentionalClose && _config.reconnect.enabled) {
       _transitionTo(SocketConnectionState.reconnecting);
       _scheduleReconnect();
@@ -334,7 +303,7 @@ class SocketConnection {
         'Max reconnect attempts (${_config.reconnect.maxAttempts}) reached',
       );
       _transitionTo(SocketConnectionState.failed);
-      _errorController.add(
+      _emitError(
         SocketError(
           type: SocketErrorType.maxRetriesExceeded,
           message:
@@ -347,35 +316,31 @@ class SocketConnection {
 
     final delay = _backoff.nextDelay();
     _reconnectAttempts++;
-
     _logger.info(
       'Reconnecting in ${delay.inMilliseconds}ms '
       '(attempt $_reconnectAttempts/${_config.reconnect.maxAttempts})',
     );
 
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(delay, () {
+    _reconnectTimer = Timer(delay, () async {
       if (!_intentionalClose) {
-        _doConnect();
+        await _doConnect();
       }
     });
   }
 
-  // ─── State Management ────────────────────────────────────────
+  //Helpers
 
-  void _transitionTo(SocketConnectionState newState) {
-    if (_state == newState) return;
-
-    final oldState = _state;
-    _state = newState;
-    _logger.info('State: ${oldState.name} → ${newState.name}');
-
-    if (!_stateController.isClosed) {
-      _stateController.add(newState);
-    }
+  void _transitionTo(SocketConnectionState next) {
+    if (_state == next) return;
+    _logger.info('State: ${_state.name} → ${next.name}');
+    _state = next;
+    if (!_stateController.isClosed) _stateController.add(next);
   }
 
-  // ─── Utilities ───────────────────────────────────────────────
+  void _emitError(SocketError error) {
+    if (!_errorController.isClosed) _errorController.add(error);
+  }
 
   void _cancelTimers() {
     _heartbeatTimer?.cancel();
@@ -386,7 +351,7 @@ class SocketConnection {
   void _assertConnected() {
     if (!isConnected || _socket == null) {
       throw StateError(
-        'Socket is not connected. Current state: ${_state.name}',
+        'Transport not connected. Current state: ${_state.name}',
       );
     }
   }

@@ -117,7 +117,7 @@ class SocketTransport {
         closeCode ?? WebSocketStatus.normalClosure,
         closeReason ?? 'Client disconnect',
       );
-    } catch (e) {
+    } on Exception catch (e) {
       _logger.warn('Error during disconnect: $e');
     } finally {
       _socket = null;
@@ -197,7 +197,7 @@ class SocketTransport {
           originalError: e,
         ),
       );
-    } catch (e, st) {
+    } on Exception catch (e, st) {
       _handleFailure(
         SocketError(
           type: SocketErrorType.unknown,
@@ -261,7 +261,7 @@ class SocketTransport {
         _socket!.add(_config.heartbeat.pingMessage);
         _logger.debug('Heartbeat ping');
         _startHeartbeatTimeout();
-      } catch (e) {
+      } on Exception catch (e) {
         _logger.error('Failed to send heartbeat: $e');
       }
     });

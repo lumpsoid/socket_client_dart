@@ -98,7 +98,7 @@ class TransportMiddleware {
         final b64 = map['d'] as String;
         final bytes = gzip.decode(base64.decode(b64));
         return utf8.decode(bytes);
-      } catch (_) {
+      } on Exception catch (_) {
         return frame; // Not actually a compressed envelope — pass through.
       }
     };

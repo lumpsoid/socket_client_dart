@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import '../models/connection_config.dart';
-import '../models/connection_state.dart';
-import '../utils/logger.dart';
-import '../utils/backoff_strategy.dart';
+import 'package:socket_client/src/backoff_strategy.dart';
+import 'package:socket_client/src/connection_config.dart';
+import 'package:socket_client/src/connection_state.dart';
+import 'package:socket_client/src/logger.dart';
 
 /// Production-grade WebSocket connection manager.
 ///
@@ -18,7 +18,15 @@ import '../utils/backoff_strategy.dart';
 /// - Connection timeout handling
 /// - Thread-safe state transitions
 class SocketConnection {
-  final ConnectionConfig config;
+  SocketConnection({
+    required ConnectionConfig config,
+    SocketLogger? logger,
+    BackoffStrategy? backoff,
+  }) : _config = config,
+       _logger = logger ?? const SocketLogger(tag: 'SocketConnection'),
+       _backoff = backoff ?? ExponentialBackoff(config: config.reconnect);
+
+  final ConnectionConfig _config;
   final SocketLogger _logger;
   final BackoffStrategy _backoff;
 
@@ -39,15 +47,6 @@ class SocketConnection {
   final _rawBytesController = StreamController<Uint8List>.broadcast();
 
   SocketConnectionState _state = SocketConnectionState.disconnected;
-
-  SocketConnection({
-    required this.config,
-    SocketLogger? logger,
-    BackoffStrategy? backoff,
-  }) : _logger = logger ?? SocketLogger(tag: 'SocketConnection'),
-       _backoff = backoff ?? ExponentialBackoff(config: config.reconnect);
-
-  // ─── Public API ──────────────────────────────────────────────
 
   /// Current connection state.
   SocketConnectionState get state => _state;
@@ -159,18 +158,18 @@ class SocketConnection {
     _transitionTo(SocketConnectionState.connecting);
 
     try {
-      final uri = config.uri;
+      final uri = _config.uri;
       _logger.info('Connecting to $uri ...');
 
       _socket =
           await WebSocket.connect(
             uri.toString(),
-            headers: config.headers,
-            protocols: config.protocols,
+            headers: _config.headers,
+            protocols: _config.protocols,
           ).timeout(
-            config.connectTimeout,
+            _config.connectTimeout,
             onTimeout: () => throw TimeoutException(
-              'Connection timed out after ${config.connectTimeout.inSeconds}s',
+              'Connection timed out after ${_config.connectTimeout.inSeconds}s',
             ),
           );
 
@@ -245,7 +244,7 @@ class SocketConnection {
           _messageController.add(bytes);
         }
       },
-      onError: (error, stackTrace) {
+      onError: (Exception error, StackTrace stackTrace) {
         _logger.error('Stream error: $error');
         _errorController.add(
           SocketError(
@@ -278,16 +277,16 @@ class SocketConnection {
   // ─── Heartbeat / Keep-Alive ──────────────────────────────────
 
   void _startHeartbeat() {
-    if (!config.heartbeat.enabled) return;
+    if (!_config.heartbeat.enabled) return;
 
     _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(config.heartbeat.interval, (_) {
+    _heartbeatTimer = Timer.periodic(_config.heartbeat.interval, (_) {
       if (isConnected) {
         try {
-          _socket!.add(config.heartbeat.pingMessage);
+          _socket!.add(_config.heartbeat.pingMessage);
           _logger.debug('Heartbeat ping sent');
           _startHeartbeatTimeout();
-        } catch (e) {
+        } on Exception catch (e) {
           _logger.error('Failed to send heartbeat: $e');
         }
       }
@@ -296,13 +295,14 @@ class SocketConnection {
 
   void _startHeartbeatTimeout() {
     _heartbeatTimeoutTimer?.cancel();
-    _heartbeatTimeoutTimer = Timer(config.heartbeat.pongTimeout, () {
+    _heartbeatTimeoutTimer = Timer(_config.heartbeat.pongTimeout, () {
       _logger.warn('Heartbeat pong timeout — closing connection');
       _errorController.add(
         SocketError(
           type: SocketErrorType.heartbeatTimeout,
           message:
-              'No pong received within ${config.heartbeat.pongTimeout.inSeconds}s',
+              'No pong received within'
+              ' ${_config.heartbeat.pongTimeout.inSeconds}s',
           timestamp: DateTime.now(),
         ),
       );
@@ -320,7 +320,7 @@ class SocketConnection {
     _logger.error('Connection failure: ${error.message}');
     _errorController.add(error);
 
-    if (!_intentionalClose && config.reconnect.enabled) {
+    if (!_intentionalClose && _config.reconnect.enabled) {
       _transitionTo(SocketConnectionState.reconnecting);
       _scheduleReconnect();
     } else {
@@ -329,16 +329,16 @@ class SocketConnection {
   }
 
   void _scheduleReconnect() {
-    if (_reconnectAttempts >= config.reconnect.maxAttempts) {
+    if (_reconnectAttempts >= _config.reconnect.maxAttempts) {
       _logger.error(
-        'Max reconnect attempts (${config.reconnect.maxAttempts}) reached',
+        'Max reconnect attempts (${_config.reconnect.maxAttempts}) reached',
       );
       _transitionTo(SocketConnectionState.failed);
       _errorController.add(
         SocketError(
           type: SocketErrorType.maxRetriesExceeded,
           message:
-              'Exceeded ${config.reconnect.maxAttempts} reconnect attempts',
+              'Exceeded ${_config.reconnect.maxAttempts} reconnect attempts',
           timestamp: DateTime.now(),
         ),
       );
@@ -350,7 +350,7 @@ class SocketConnection {
 
     _logger.info(
       'Reconnecting in ${delay.inMilliseconds}ms '
-      '(attempt $_reconnectAttempts/${config.reconnect.maxAttempts})',
+      '(attempt $_reconnectAttempts/${_config.reconnect.maxAttempts})',
     );
 
     _reconnectTimer?.cancel();

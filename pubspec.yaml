@@ -1,5 +1,8 @@
 name: socket_client
-description: A Very Good Project created by Very Good CLI.
+description: >
+  Production-ready WebSocket networking system for Dart & Flutter.
+  Features automatic reconnection, heartbeat keep-alive, typed messaging,
+  middleware pipeline, channel pub/sub, offline queueing, and health monitoring.
 version: 0.1.0+1
 publish_to: none
 

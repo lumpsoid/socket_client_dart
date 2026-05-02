@@ -1,7 +1,6 @@
 import 'dart:async';
 
-import '../models/connection_state.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/logger.dart';
 
 /// Real-time metrics for the socket connection.
 class SocketMetrics {
@@ -103,6 +102,14 @@ enum HealthStatus { healthy, degraded, unhealthy }
 
 /// Monitors connection health based on metrics thresholds.
 class HealthMonitor {
+  HealthMonitor({
+    required this.metrics,
+    this.checkInterval = const Duration(seconds: 30),
+    this.maxLatency = const Duration(milliseconds: 5000),
+    this.maxErrorsPerMinute = 5,
+    SocketLogger? logger,
+  }) : _logger = logger ?? const SocketLogger(tag: 'Health');
+
   final SocketMetrics metrics;
   final Duration checkInterval;
   final Duration maxLatency;
@@ -114,14 +121,6 @@ class HealthMonitor {
 
   final _statusController = StreamController<HealthStatus>.broadcast();
   final List<DateTime> _recentErrors = [];
-
-  HealthMonitor({
-    required this.metrics,
-    this.checkInterval = const Duration(seconds: 30),
-    this.maxLatency = const Duration(milliseconds: 5000),
-    this.maxErrorsPerMinute = 5,
-    SocketLogger? logger,
-  }) : _logger = logger ?? const SocketLogger(tag: 'Health');
 
   HealthStatus get status => _status;
   Stream<HealthStatus> get statusStream => _statusController.stream;
@@ -165,8 +164,8 @@ class HealthMonitor {
     return newStatus;
   }
 
-  void dispose() {
+  Future<void> dispose() async {
     stop();
-    _statusController.close();
+    await _statusController.close();
   }
 }

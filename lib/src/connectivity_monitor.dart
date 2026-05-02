@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import '../models/connection_state.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/connection_state.dart';
+import 'package:socket_client/src/logger.dart';
 
 /// Represents the device's network connectivity status.
 enum NetworkStatus {
@@ -29,16 +29,6 @@ enum NetworkStatus {
 /// );
 /// ```
 class ConnectivityMonitor {
-  final Stream<NetworkStatus>? connectivityStream;
-  final Duration debounce;
-  final SocketLogger _logger;
-
-  NetworkStatus _status = NetworkStatus.unknown;
-  StreamSubscription? _subscription;
-  Timer? _debounceTimer;
-
-  final _statusController = StreamController<NetworkStatus>.broadcast();
-
   ConnectivityMonitor({
     this.connectivityStream,
     this.debounce = const Duration(seconds: 2),
@@ -46,6 +36,15 @@ class ConnectivityMonitor {
   }) : _logger = logger ?? const SocketLogger(tag: 'Connectivity') {
     _init();
   }
+  final Stream<NetworkStatus>? connectivityStream;
+  final Duration debounce;
+  final SocketLogger _logger;
+
+  NetworkStatus _status = NetworkStatus.unknown;
+  StreamSubscription<NetworkStatus>? _subscription;
+  Timer? _debounceTimer;
+
+  final _statusController = StreamController<NetworkStatus>.broadcast();
 
   NetworkStatus get status => _status;
   bool get isOnline => _status == NetworkStatus.online;
@@ -87,13 +86,6 @@ class ConnectivityMonitor {
 ///
 /// Pauses reconnection when offline, resumes when back online.
 class NetworkAwareReconnector {
-  final ConnectivityMonitor monitor;
-  final Future<void> Function() onReconnectRequested;
-  final Future<void> Function() onDisconnectRequested;
-  final SocketLogger _logger;
-
-  StreamSubscription? _subscription;
-
   NetworkAwareReconnector({
     required this.monitor,
     required this.onReconnectRequested,
@@ -102,6 +94,12 @@ class NetworkAwareReconnector {
   }) : _logger = logger ?? const SocketLogger(tag: 'NetReconnector') {
     _subscription = monitor.statusStream.listen(_handleNetworkChange);
   }
+  final ConnectivityMonitor monitor;
+  final Future<void> Function() onReconnectRequested;
+  final Future<void> Function() onDisconnectRequested;
+  final SocketLogger _logger;
+
+  StreamSubscription<NetworkStatus>? _subscription;
 
   void _handleNetworkChange(NetworkStatus status) {
     switch (status) {

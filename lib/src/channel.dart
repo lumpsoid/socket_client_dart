@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'message_protocol.dart';
-import '../utils/logger.dart';
+import 'package:socket_client/src/logger.dart';
+import 'package:socket_client/src/message_protocol.dart';
 
 /// Represents a named channel for topic-based pub/sub.
 ///
@@ -11,6 +11,15 @@ import '../utils/logger.dart';
 /// - Presence tracking
 /// - Channel-scoped event handling
 class SocketChannel {
+  SocketChannel({
+    required this.name,
+    required MessageProtocol protocol,
+    required void Function(String json) sendRaw,
+    SocketLogger? logger,
+  }) : _protocol = protocol,
+       _sendRaw = sendRaw,
+       _logger = logger ?? SocketLogger(tag: 'Channel[$name]');
+
   final String name;
   final MessageProtocol _protocol;
   final void Function(String json) _sendRaw;
@@ -22,15 +31,6 @@ class SocketChannel {
 
   final _stateController = StreamController<ChannelState>.broadcast();
   final _messageController = StreamController<SocketMessage>.broadcast();
-
-  SocketChannel({
-    required this.name,
-    required MessageProtocol protocol,
-    required void Function(String json) sendRaw,
-    SocketLogger? logger,
-  })  : _protocol = protocol,
-        _sendRaw = sendRaw,
-        _logger = logger ?? SocketLogger(tag: 'Channel[$name]');
 
   ChannelState get state => _state;
   Stream<ChannelState> get stateStream => _stateController.stream;
@@ -104,14 +104,17 @@ class SocketChannel {
   }
 
   /// Send a message to this channel.
-  Future<void> send(String event, {Map<String, dynamic> data = const {}}) async {
+  Future<void> send(
+    String event, {
+    Map<String, dynamic>? data,
+  }) async {
     if (!isJoined) {
       throw StateError('Cannot send: channel "$name" is not joined');
     }
 
     final msg = SocketMessage.create(
       event: 'channel:$name',
-      data: {'event': event, ...data},
+      data: {'event': event, ...?data},
     );
 
     final prepared = await _protocol.prepareOutbound(msg);
@@ -168,16 +171,15 @@ enum ChannelState {
 
 /// Manages multiple channels over a single socket connection.
 class ChannelManager {
-  final MessageProtocol protocol;
-  final void Function(String json) sendRaw;
-  final SocketLogger _logger;
-  final Map<String, SocketChannel> _channels = {};
-
   ChannelManager({
     required this.protocol,
     required this.sendRaw,
     SocketLogger? logger,
   }) : _logger = logger ?? const SocketLogger(tag: 'ChannelManager');
+  final MessageProtocol protocol;
+  final void Function(String json) sendRaw;
+  final SocketLogger _logger;
+  final Map<String, SocketChannel> _channels = {};
 
   /// Get or create a channel by name.
   SocketChannel channel(String name) {
@@ -214,8 +216,7 @@ class ChannelManager {
   /// Rejoin all previously joined channels (e.g., after reconnect).
   Future<void> rejoinAll() async {
     for (final ch in _channels.values) {
-      if (ch.state == ChannelState.left ||
-          ch.state == ChannelState.error) {
+      if (ch.state == ChannelState.left || ch.state == ChannelState.error) {
         try {
           await ch.join();
         } catch (e) {

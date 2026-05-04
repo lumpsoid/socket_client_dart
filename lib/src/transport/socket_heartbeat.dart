@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:socket_client/src/transport/connection_config.dart';
 
 /// Callback invoked when the heartbeat layer wants to send a ping frame.
-typedef PingSender = void Function(Object frame);
+typedef PingSender = void Function(dynamic frame);
 
 /// Callback invoked when no pong is received within the configured window.
 typedef PongTimeoutCallback = void Function();

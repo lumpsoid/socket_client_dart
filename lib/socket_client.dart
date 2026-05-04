@@ -8,8 +8,7 @@
 ///
 /// Optional add-ons:
 /// - [SocketClient] — thin facade over transport + router
-/// - [QueuedTransport] — offline-buffering wrapper
-/// - [TransportMiddlewarePipeline] — raw-frame middleware (logging, gzip,
+/// - [QueuedTransport] — offline-buffering wrapper - [TransportMiddlewarePipeline] — raw-frame middleware (logging, gzip,
 /// rate-limit)
 /// - [ConnectivityMonitor] — network status observation
 /// - [NetworkAwareReconnector] — auto reconnect on network restore
@@ -54,6 +53,8 @@ export 'src/ref_generator/ref_generator_i.dart';
 export 'src/transport/backoff_strategy.dart';
 export 'src/transport/connection_config.dart';
 export 'src/transport/connection_state.dart';
+export 'src/transport/heartbeat_ping_builder.dart';
+export 'src/transport/interval_framed_heartbeat.dart';
 export 'src/transport/interval_heartbeat.dart';
 export 'src/transport/socket_heartbeat.dart';
 export 'src/transport/socket_transport.dart';

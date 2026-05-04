@@ -5,7 +5,4 @@ abstract class SocketSession<T> {
 
   /// Send a frame and await a correlated reply.
   Future<T> request(T frame, {Duration timeout});
-
-  /// Subscribe to a topic stream.
-  Stream<T> topic(String topic);
 }

@@ -34,8 +34,9 @@ class PhoenixFrame {
 
 /// [FrameCodec] implementation for the Phoenix Channels protocol.
 class PhoenixCodec implements FrameCodec<PhoenixFrame> {
-  static int _refCounter = 0;
-  static String _nextRef() => '${++_refCounter}';
+  PhoenixCodec({required RefGenerator refGen}) : _refGen = refGen;
+
+  final RefGenerator _refGen;
 
   @override
   PhoenixFrame decode(String raw) {
@@ -57,7 +58,7 @@ class PhoenixCodec implements FrameCodec<PhoenixFrame> {
   String encode(PhoenixFrame frame) {
     return json.encode([
       frame.joinRef,
-      frame.ref ?? _nextRef(),
+      frame.ref ?? _refGen.next(),
       frame.topic,
       frame.event,
       frame.payload,
@@ -73,14 +74,12 @@ class PhoenixCodec implements FrameCodec<PhoenixFrame> {
     if (frame.event == 'phx_reply') return frame.ref;
     return null;
   }
-
-  @override
-  String topicOf(PhoenixFrame frame) => frame.topic;
 }
 
 // Usage
 
 Future<void> main() async {
+  final refGen = MonotonicRefGenerator();
   final client = SocketClient(
     config: ConnectionConfig.fromUrl(
       'wss://my-phoenix-server.com/socket/websocket',
@@ -89,15 +88,12 @@ Future<void> main() async {
             '{"topic":"phoenix","event":"heartbeat","payload":{},"ref":"hb"}',
       ),
     ),
-    codec: PhoenixCodec(),
-    onReconnected: (_) async {
-      // Re-join channels, re-authenticate, etc.
-      print('Reconnected — rejoining channels');
-    },
+    codec: PhoenixCodec(refGen: refGen),
+    refGen: refGen,
   );
 
   // Subscribe to a channel topic.
-  client.topic('room:lobby').listen((frame) {
+  client.allFrames.where((f) => f.topic == 'room:lobby').listen((frame) {
     print('room:lobby received: ${frame.event} payload=${frame.payload}');
   });
 

@@ -45,14 +45,6 @@ abstract class FrameCodec<T> {
 
   /// Extract the ID this [frame] is replying to, if any.
   String? replyCorrelationId(T frame);
-
-  /// Derive the routing key that determines which topic stream receives
-  /// [frame].
-  ///
-  /// Phoenix: return the channel topic (e.g. `"room:lobby"`).
-  /// STOMP: return the destination header.
-  /// Custom: return any stable string that groups related frames.
-  String topicOf(T frame);
 }
 
 /// Thrown by [FrameCodec.decode] when a raw frame cannot be parsed.

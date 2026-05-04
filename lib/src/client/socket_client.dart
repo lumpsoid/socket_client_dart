@@ -12,15 +12,11 @@ import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/transport/socket_transport.dart';
 import 'package:socket_client/src/util/logger.dart';
 
-/// Optional convenience facade that wires [SocketTransport] and [TopicRouter]
+/// Optional convenience facade that wires [SocketTransport] and [FrameRouter]
 /// together.
 ///
 /// This class is **not** required — you can compose transport + router
-/// directly. Use this when you want a simple unified API and are happy with
-/// the defaults.
-///
-/// All protocol-specific behaviour (auth, channel join/leave, presence) is
-/// handled via [onReconnected] and the caller's own codec — not hardcoded here.
+/// directly.
 ///
 /// ```dart
 /// final client = SocketClient(
@@ -28,7 +24,7 @@ import 'package:socket_client/src/util/logger.dart';
 ///   codec: MyCodec(),
 /// );
 ///
-/// client.topic('room:lobby').listen((frame) { ... });
+/// client.allFrames.listen((frame) { ... });
 ///
 /// await client.connect();
 /// client.emit(myFrame);
@@ -41,34 +37,33 @@ class SocketClient<T> implements SocketSession<T> {
     SocketHeartbeat? heartbeat,
     BackoffStrategy? backoff,
     SocketLogger? logger,
-  }) : _refGen = refGen,
-       _logger = logger ?? const SocketLogger(tag: 'SocketClient'),
+  }) : _logger = logger ?? const SocketLogger(tag: 'SocketClient'),
        transport = SocketTransport(
+         config: config,
          logger: logger ?? const SocketLogger(tag: 'Transport'),
          heartbeat:
              heartbeat ??
              IntervalHeartbeat(config: config.heartbeat, refGen: refGen),
          backoff: backoff ?? ExponentialBackoff(config: config.reconnect),
        ),
-       router = TopicRouter<T>(
+       router = FrameRouter<T>(
          codec: codec,
          logger: logger ?? const SocketLogger(tag: 'Router'),
        ) {
     _wire();
   }
 
-  final RefGenerator _refGen;
-
   /// Access the underlying transport for advanced use.
   final SocketTransport transport;
 
   /// Access the underlying router for advanced use (e.g. streaming directly).
-  final TopicRouter<T> router;
+  final FrameRouter<T> router;
 
   final SocketLogger _logger;
 
-  final List<StreamSubscription<dynamic>> _subs = [];
   bool _disposed = false;
+
+  StreamSubscription<String>? _parsingSub;
 
   //Delegated API
 
@@ -78,29 +73,8 @@ class SocketClient<T> implements SocketSession<T> {
   Stream<SocketError> get errors => transport.errorStream;
   Duration? get uptime => transport.connectionUptime;
 
-  /// Returns the broadcast stream for the given [topic].
-  Stream<T> topic(String topic) => router.topic(topic);
-
-  /// All decoded inbound frames regardless of topic.
+  /// All decoded inbound frames;
   Stream<T> get allFrames => router.allFrames;
-
-  /// Called once after the first successful connection.
-  Future<void> onConnected() {
-    // no-op
-    return Future.syncValue(null);
-  }
-
-  /// Called after every successful reconnect.
-  Future<void> onReconnected() {
-    // no-op
-    return Future.syncValue(null);
-  }
-
-  /// Called when the transport reaches disconnected or failed.
-  Future<void> onDisconnected() {
-    // no-op
-    return Future.syncValue(null);
-  }
 
   //Actions
 
@@ -132,10 +106,10 @@ class SocketClient<T> implements SocketSession<T> {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
-    for (final s in _subs) {
-      await s.cancel();
-    }
-    _subs.clear();
+
+    await _parsingSub?.cancel();
+    _parsingSub = null;
+
     await router.dispose();
     await transport.dispose();
     _logger.info('SocketClient disposed');
@@ -143,44 +117,7 @@ class SocketClient<T> implements SocketSession<T> {
 
   void _wire() {
     // Route raw text frames into the protocol layer.
-    _subs.add(transport.textStream.listen(router.ingest));
-
-    var firstConnect = true;
-    _subs.add(
-      transport.stateStream.listen((state) async {
-        switch (state) {
-          case SocketConnectionState.connected:
-            if (firstConnect) {
-              firstConnect = false;
-              _logger.info('Connected — invoking onConnected hook');
-              try {
-                await onConnected();
-              } on Exception catch (e) {
-                _logger.error('onConnected hook threw: $e');
-              }
-            } else {
-              _logger.info('Reconnected — invoking onReconnected hook');
-              try {
-                await onReconnected();
-              } on Exception catch (e) {
-                _logger.error('onReconnected hook threw: $e');
-              }
-            }
-
-          case SocketConnectionState.disconnected:
-          case SocketConnectionState.failed:
-            try {
-              await onDisconnected();
-            } on Exception catch (e) {
-              _logger.error('onDisconnected hook threw: $e');
-            }
-          case SocketConnectionState.connecting:
-          case SocketConnectionState.reconnecting:
-          case SocketConnectionState.disconnecting:
-            break;
-        }
-      }),
-    );
+    _parsingSub = transport.textStream.listen(router.ingest);
   }
 
   void _assertNotDisposed() {

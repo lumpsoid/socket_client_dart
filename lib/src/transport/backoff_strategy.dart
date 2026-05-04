@@ -2,7 +2,10 @@ import 'dart:math';
 
 import 'package:socket_client/src/transport/connection_config.dart';
 
-abstract class BackoffStrategy {
+abstract class ReconnectionStrategy {
+  int get maxAttempts;
+  int get attempt;
+  bool get isExhausted;
   Duration nextDelay();
   void reset();
 }
@@ -11,23 +14,32 @@ abstract class BackoffStrategy {
 ///
 /// delay = min(maxDelay, initialDelay × multiplier^attempt)
 /// With jitter: delay = random(0, delay)
-class ExponentialBackoff implements BackoffStrategy {
-  ExponentialBackoff({required this.config});
+class ExponentialBackoff implements ReconnectionStrategy {
+  ExponentialBackoff({required ReconnectConfig config}) : _config = config;
 
-  final ReconnectConfig config;
+  final ReconnectConfig _config;
   final Random _rng = Random();
   int _attempt = 0;
 
   @override
+  bool get isExhausted => _attempt == _config.maxAttempts;
+
+  @override
+  int get maxAttempts => _config.maxAttempts;
+
+  @override
+  int get attempt => _attempt;
+
+  @override
   Duration nextDelay() {
     final exponentialMs =
-        config.initialDelay.inMilliseconds *
-        pow(config.multiplier, _attempt).toDouble();
+        _config.initialDelay.inMilliseconds *
+        pow(_config.multiplier, _attempt).toDouble();
     final cappedMs = min(
       exponentialMs,
-      config.maxDelay.inMilliseconds.toDouble(),
+      _config.maxDelay.inMilliseconds.toDouble(),
     );
-    final delayMs = config.jitter
+    final delayMs = _config.jitter
         ? (_rng.nextDouble() * cappedMs).round()
         : cappedMs.round();
     _attempt++;
@@ -39,17 +51,26 @@ class ExponentialBackoff implements BackoffStrategy {
 }
 
 /// Linear backoff: delay = initialDelay + step × attempt, capped at maxDelay.
-class LinearBackoff implements BackoffStrategy {
+class LinearBackoff implements ReconnectionStrategy {
   LinearBackoff({
     this.initialDelay = const Duration(seconds: 1),
     this.step = const Duration(seconds: 2),
     this.maxDelay = const Duration(seconds: 60),
+    this.maxAttempts = -1,
   });
 
   final Duration initialDelay;
   final Duration step;
   final Duration maxDelay;
+
+  /// -1 signals unlimited
+  @override
+  final int maxAttempts;
+
   int _attempt = 0;
+
+  @override
+  int get attempt => _attempt;
 
   @override
   Duration nextDelay() {
@@ -60,4 +81,7 @@ class LinearBackoff implements BackoffStrategy {
 
   @override
   void reset() => _attempt = 0;
+
+  @override
+  bool get isExhausted => maxAttempts != -1 && _attempt >= maxAttempts;
 }

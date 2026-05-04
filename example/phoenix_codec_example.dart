@@ -81,15 +81,10 @@ class PhoenixCodec implements FrameCodec<PhoenixFrame> {
 Future<void> main() async {
   final refGen = MonotonicRefGenerator();
   final client = SocketClient(
-    config: ConnectionConfig.fromUrl(
-      'wss://my-phoenix-server.com/socket/websocket',
-      heartbeat: const HeartbeatConfig(
-        pingMessage:
-            '{"topic":"phoenix","event":"heartbeat","payload":{},"ref":"hb"}',
-      ),
+    config: const ConnectionConfig(
+      url: 'wss://my-phoenix-server.com/socket/websocket',
     ),
     codec: PhoenixCodec(refGen: refGen),
-    refGen: refGen,
   );
 
   // Subscribe to a channel topic.

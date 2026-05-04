@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:socket_client/src/protocol/frame_codec.dart';
 import 'package:socket_client/src/protocol/socket_session.dart';
 import 'package:socket_client/src/protocol/topic_router.dart';
-import 'package:socket_client/src/ref_generator/ref_generator_i.dart';
 import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
@@ -34,14 +33,16 @@ class SocketClient<T> implements SocketSession<T> {
     required ConnectionConfig config,
     required FrameCodec<T> codec,
     SocketHeartbeat? heartbeat,
-    BackoffStrategy? backoff,
+    ReconnectionStrategy? backoff,
     SocketLogger? logger,
   }) : _logger = logger ?? const SocketLogger(tag: 'SocketClient'),
        transport = SocketTransport(
          config: config,
          logger: logger ?? const SocketLogger(tag: 'Transport'),
-         heartbeat: heartbeat ?? IntervalHeartbeat(config: config.heartbeat),
-         backoff: backoff ?? ExponentialBackoff(config: config.reconnect),
+         heartbeat:
+             heartbeat ?? IntervalHeartbeat(config: const HeartbeatConfig()),
+         backoff:
+             backoff ?? ExponentialBackoff(config: const ReconnectConfig()),
        ),
        router = FrameRouter<T>(
          codec: codec,

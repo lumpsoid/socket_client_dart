@@ -1,51 +1,27 @@
-/// Full configuration for transport.
+/// Config for making a connection to a socket
 class ConnectionConfig {
   const ConnectionConfig({
-    required this.uri,
+    required this.url,
     this.headers,
     this.protocols,
     this.connectTimeout = const Duration(seconds: 15),
-    this.heartbeat = const HeartbeatConfig(),
-    this.reconnect = const ReconnectConfig(),
   });
 
-  factory ConnectionConfig.fromUrl(
-    String url, {
-    Map<String, dynamic>? headers,
-    Iterable<String>? protocols,
-    Duration connectTimeout = const Duration(seconds: 15),
-    HeartbeatConfig heartbeat = const HeartbeatConfig(),
-    ReconnectConfig reconnect = const ReconnectConfig(),
-  }) => ConnectionConfig(
-    uri: Uri.parse(url),
-    headers: headers,
-    protocols: protocols,
-    connectTimeout: connectTimeout,
-    heartbeat: heartbeat,
-    reconnect: reconnect,
-  );
-
-  final Uri uri;
+  final String url;
   final Map<String, dynamic>? headers;
   final Iterable<String>? protocols;
   final Duration connectTimeout;
-  final HeartbeatConfig heartbeat;
-  final ReconnectConfig reconnect;
 
   ConnectionConfig copyWith({
-    Uri? uri,
+    String? url,
     Map<String, dynamic>? headers,
     Iterable<String>? protocols,
     Duration? connectTimeout,
-    HeartbeatConfig? heartbeat,
-    ReconnectConfig? reconnect,
   }) => ConnectionConfig(
-    uri: uri ?? this.uri,
+    url: url ?? this.url,
     headers: headers ?? this.headers,
     protocols: protocols ?? this.protocols,
     connectTimeout: connectTimeout ?? this.connectTimeout,
-    heartbeat: heartbeat ?? this.heartbeat,
-    reconnect: reconnect ?? this.reconnect,
   );
 }
 

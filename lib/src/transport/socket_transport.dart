@@ -22,16 +22,16 @@ class SocketTransport {
   SocketTransport({
     required ConnectionConfig config,
     required SocketHeartbeat heartbeat,
-    required BackoffStrategy backoff,
+    ReconnectionStrategy? backoff,
     SocketLogger? logger,
-  }) : _config = config,
+  }) : _connectionConfig = config,
        _logger = logger ?? const SocketLogger(tag: 'Transport'),
-       _backoff = backoff,
+       _reconnectionStrategy = backoff,
        _heartbeat = heartbeat;
 
-  final ConnectionConfig _config;
+  final ConnectionConfig _connectionConfig;
   final SocketLogger _logger;
-  final BackoffStrategy _backoff;
+  final ReconnectionStrategy? _reconnectionStrategy;
 
   final SocketHeartbeat _heartbeat;
 
@@ -39,7 +39,6 @@ class SocketTransport {
   Timer? _reconnectTimer;
   Completer<void>? _connectionLock;
 
-  int _reconnectAttempts = 0;
   bool _intentionalClose = false;
   DateTime? _connectedAt;
   DateTime? _lastMessageAt;
@@ -145,21 +144,21 @@ class SocketTransport {
   Future<void> _doConnect() async {
     _transitionTo(SocketConnectionState.connecting);
     try {
-      _logger.info('Connecting to ${_config.uri}');
+      _logger.info('Connecting to ${_connectionConfig.url}');
       _socket =
           await WebSocket.connect(
-            _config.uri.toString(),
-            headers: _config.headers,
-            protocols: _config.protocols,
+            _connectionConfig.url,
+            headers: _connectionConfig.headers,
+            protocols: _connectionConfig.protocols,
           ).timeout(
-            _config.connectTimeout,
+            _connectionConfig.connectTimeout,
             onTimeout: () => throw TimeoutException(
-              'Connection timed out after ${_config.connectTimeout.inSeconds}s',
+              'Connection timed out after'
+              ' ${_connectionConfig.connectTimeout.inSeconds}s',
             ),
           );
 
-      _reconnectAttempts = 0;
-      _backoff.reset();
+      _reconnectionStrategy?.reset();
       _connectedAt = DateTime.now();
       _transitionTo(SocketConnectionState.connected);
       _logger.info('Connected');
@@ -261,7 +260,7 @@ class SocketTransport {
       _emitError(
         SocketError(
           type: SocketErrorType.heartbeatTimeout,
-          message: 'No pong within ${_config.heartbeat.pongTimeout.inSeconds}s',
+          message: 'No pong within pong timeout',
           timestamp: DateTime.now(),
         ),
       );
@@ -276,7 +275,7 @@ class SocketTransport {
   void _handleFailure(SocketError error) {
     _logger.error('Connection failure: ${error.message}');
     _emitError(error);
-    if (!_intentionalClose && _config.reconnect.enabled) {
+    if (!_intentionalClose && _reconnectionStrategy != null) {
       _transitionTo(SocketConnectionState.reconnecting);
       _scheduleReconnect();
     } else {
@@ -285,27 +284,27 @@ class SocketTransport {
   }
 
   void _scheduleReconnect() {
-    if (_reconnectAttempts >= _config.reconnect.maxAttempts) {
+    if (_reconnectionStrategy!.isExhausted) {
       _logger.error(
-        'Max reconnect attempts (${_config.reconnect.maxAttempts}) reached',
+        'Max reconnect attempts (${_reconnectionStrategy.maxAttempts}) reached',
       );
       _transitionTo(SocketConnectionState.failed);
       _emitError(
         SocketError(
           type: SocketErrorType.maxRetriesExceeded,
           message:
-              'Exceeded ${_config.reconnect.maxAttempts} reconnect attempts',
+              'Exceeded ${_reconnectionStrategy.maxAttempts} reconnect'
+              ' attempts',
           timestamp: DateTime.now(),
         ),
       );
       return;
     }
 
-    final delay = _backoff.nextDelay();
-    _reconnectAttempts++;
+    final delay = _reconnectionStrategy.nextDelay();
     _logger.info(
       'Reconnecting in ${delay.inMilliseconds}ms '
-      '(attempt $_reconnectAttempts/${_config.reconnect.maxAttempts})',
+      '(attempt ${_reconnectionStrategy.attempt}/${_reconnectionStrategy.maxAttempts})',
     );
 
     _reconnectTimer?.cancel();

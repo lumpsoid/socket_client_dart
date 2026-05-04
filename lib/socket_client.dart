@@ -3,7 +3,7 @@
 /// Core layers (always available):
 /// - [SocketTransport] — raw WebSocket with reconnect + heartbeat
 /// - [FrameCodec] — implement this for your wire protocol
-/// - [TopicRouter] — stream-per-topic routing + request-reply
+/// - [FrameRouter] — stream-per-topic routing + request-reply
 /// - [PendingRequests] — standalone correlation tracker
 ///
 /// Optional add-ons:
@@ -27,7 +27,7 @@ import 'package:socket_client/src/middleware/transport_middleware.dart'
 import 'package:socket_client/src/protocol/frame_codec.dart' show FrameCodec;
 import 'package:socket_client/src/protocol/pending_requests.dart'
     show PendingRequests;
-import 'package:socket_client/src/protocol/topic_router.dart' show TopicRouter;
+import 'package:socket_client/src/protocol/topic_router.dart' show FrameRouter;
 import 'package:socket_client/src/queue/queued_transport.dart'
     show QueuedTransport;
 import 'package:socket_client/src/transport/socket_transport.dart'

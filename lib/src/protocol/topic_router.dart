@@ -20,8 +20,8 @@ import 'package:socket_client/src/util/logger.dart';
 ///   send: (encoded) => transport.sendText(encoded),
 /// );
 /// ```
-class TopicRouter<T> {
-  TopicRouter({
+class FrameRouter<T> {
+  FrameRouter({
     required FrameCodec<T> codec,
     SocketLogger? logger,
   }) : _codec = codec,
@@ -34,26 +34,10 @@ class TopicRouter<T> {
   final SocketLogger _logger;
   final PendingRequests<T> _pending;
 
-  /// Lazily created per-topic broadcast controllers.
-  final Map<String, StreamController<T>> _topics = {};
-
   /// A catch-all broadcast stream for every decoded frame, regardless of topic.
   final StreamController<T> _allFrames = StreamController<T>.broadcast();
 
   Stream<T> get allFrames => _allFrames.stream;
-
-  //Topic Streams
-
-  /// Returns the broadcast stream for [topic], creating it on first access.
-  ///
-  /// Streams are never closed by the router — dispose of your subscriptions
-  /// when done.
-  Stream<T> topic(String topic) {
-    return _topicController(topic).stream;
-  }
-
-  StreamController<T> _topicController(String key) =>
-      _topics.putIfAbsent(key, StreamController<T>.broadcast);
 
   // Inbound
 
@@ -61,17 +45,11 @@ class TopicRouter<T> {
   ///
   /// Decodes via [FrameCodec.decode], resolves any pending reply, then
   /// emits on the appropriate topic stream.
-  Future<void> ingest(String raw) async {
-    T frame;
-    try {
-      frame = _codec.decode(raw);
-    } on FrameDecodeException catch (e) {
-      _logger.warn('Frame decode failed: $e');
-      return;
-    } on Exception catch (e) {
-      _logger.warn('Unexpected decode error: $e');
-      return;
-    }
+  /// Throws on decode exception.
+  Future<T> ingest(
+    String raw,
+  ) async {
+    final frame = _codec.decode(raw);
 
     _allFrames.add(frame);
 
@@ -81,10 +59,7 @@ class TopicRouter<T> {
       _pending.resolve(replyId, frame);
     }
 
-    // Route to topic stream.
-    final key = _codec.topicOf(frame);
-    _topicController(key).add(frame);
-    _logger.debug('Routed frame → topic "$key"');
+    return frame;
   }
 
   // Outbound / Request-Reply
@@ -120,10 +95,6 @@ class TopicRouter<T> {
 
   Future<void> dispose() async {
     _pending.dispose();
-    for (final ctrl in _topics.values) {
-      await ctrl.close();
-    }
-    _topics.clear();
     await _allFrames.close();
     _logger.info('TopicRouter disposed');
   }

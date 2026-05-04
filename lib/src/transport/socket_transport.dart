@@ -20,13 +20,16 @@ import 'package:socket_client/src/util/logger.dart';
 /// ```
 class SocketTransport {
   SocketTransport({
+    required ConnectionConfig config,
     required SocketHeartbeat heartbeat,
     required BackoffStrategy backoff,
     SocketLogger? logger,
-  }) : _logger = logger ?? const SocketLogger(tag: 'Transport'),
+  }) : _config = config,
+       _logger = logger ?? const SocketLogger(tag: 'Transport'),
        _backoff = backoff,
        _heartbeat = heartbeat;
 
+  final ConnectionConfig _config;
   final SocketLogger _logger;
   final BackoffStrategy _backoff;
 

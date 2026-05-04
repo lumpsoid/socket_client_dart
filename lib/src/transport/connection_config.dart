@@ -55,12 +55,19 @@ class HeartbeatConfig {
     this.interval = const Duration(seconds: 30),
     this.pongTimeout = const Duration(seconds: 10),
     this.pingMessage = 'ping',
+    this.frameBuilder,
   });
 
   final bool enabled;
   final Duration interval;
   final Duration pongTimeout;
   final String pingMessage;
+
+  /// If provided, called each tick to build the outbound ping frame.
+  /// Receives a fresh ref string.
+  final String Function(String ref)? frameBuilder;
+
+  String buildPing(String ref) => frameBuilder?.call(ref) ?? pingMessage;
 }
 
 class ReconnectConfig {

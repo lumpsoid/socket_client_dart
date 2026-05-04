@@ -90,7 +90,7 @@ Future<void> main() async {
       ),
     ),
     codec: PhoenixCodec(),
-    onReconnected: () async {
+    onReconnected: (_) async {
       // Re-join channels, re-authenticate, etc.
       print('Reconnected — rejoining channels');
     },

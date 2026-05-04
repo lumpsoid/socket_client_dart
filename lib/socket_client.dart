@@ -47,10 +47,13 @@ export 'src/protocol/topic_router.dart';
 // Queue
 export 'src/queue/message_queue.dart';
 export 'src/queue/queued_transport.dart';
+// Ref generator
+export 'src/ref_generator/monotonic_ref_generator.dart';
+export 'src/ref_generator/ref_generator_i.dart';
+// Transport
 export 'src/transport/backoff_strategy.dart';
 export 'src/transport/connection_config.dart';
 export 'src/transport/connection_state.dart';
-// Transport
 export 'src/transport/interval_heartbeat.dart';
 export 'src/transport/socket_heartbeat.dart';
 export 'src/transport/socket_transport.dart';

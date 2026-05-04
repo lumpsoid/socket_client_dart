@@ -51,6 +51,8 @@ export 'src/transport/backoff_strategy.dart';
 export 'src/transport/connection_config.dart';
 export 'src/transport/connection_state.dart';
 // Transport
+export 'src/transport/interval_heartbeat.dart';
+export 'src/transport/socket_heartbeat.dart';
 export 'src/transport/socket_transport.dart';
 // Utilities
 export 'src/util/logger.dart';

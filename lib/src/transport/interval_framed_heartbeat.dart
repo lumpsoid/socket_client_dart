@@ -5,34 +5,17 @@ import 'package:socket_client/src/transport/heartbeat_ping_builder.dart';
 import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/util/logger.dart';
 
-/// Default heartbeat implementation driven by a fixed [Timer.periodic] interval.
-///
-/// Behaviour:
-/// - Sends a ping frame every [HeartbeatConfig.interval].
-/// - Starts a pong-timeout window ([HeartbeatConfig.pongTimeout]) after each ping.
-/// - Any inbound frame ([didReceiveFrame]) cancels the active timeout window —
-///   the next ping resets the cycle.
-/// - Calls [PongTimeoutCallback] once if no frame arrives within the timeout.
-///   Does **not** close the socket itself; that decision belongs to the caller.
-///
-/// ```dart
-/// final hb = IntervalHeartbeat(
-///   config: config.heartbeat,
-///   refGen: _refGen,
-///   logger: _logger,
-/// );
-/// ```
-class IntervalHeartbeat implements SocketHeartbeat {
-  IntervalHeartbeat({
+class IntervalFramedHeartbeat<T> implements SocketHeartbeat {
+  IntervalFramedHeartbeat({
+    required FrameHeartbeatPingBuilder<T> pingBuilder,
     required HeartbeatConfig config,
-    HeartbeatPingBuilder? pingBuilder,
     SocketLogger? logger,
-  }) : _pingBuilder = pingBuilder ?? ConfigHeartbeatPingBuilder(config: config),
+  }) : _pingBuilder = pingBuilder,
        _config = config,
        _logger = logger ?? const SocketLogger(tag: 'Heartbeat');
 
   final HeartbeatConfig _config;
-  final HeartbeatPingBuilder _pingBuilder;
+  final FrameHeartbeatPingBuilder<T> _pingBuilder;
   final SocketLogger _logger;
 
   Timer? _pingTimer;
@@ -77,7 +60,8 @@ class IntervalHeartbeat implements SocketHeartbeat {
     if (send == null) return;
 
     try {
-      send(_pingBuilder.buildPing());
+      final frame = _pingBuilder.buildPing();
+      send(frame);
       _logger.debug('Ping sent');
       _startPongTimeout();
     } on Exception catch (e) {

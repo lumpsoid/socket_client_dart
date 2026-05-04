@@ -33,7 +33,6 @@ class SocketClient<T> implements SocketSession<T> {
   SocketClient({
     required ConnectionConfig config,
     required FrameCodec<T> codec,
-    required RefGenerator refGen,
     SocketHeartbeat? heartbeat,
     BackoffStrategy? backoff,
     SocketLogger? logger,
@@ -41,9 +40,7 @@ class SocketClient<T> implements SocketSession<T> {
        transport = SocketTransport(
          config: config,
          logger: logger ?? const SocketLogger(tag: 'Transport'),
-         heartbeat:
-             heartbeat ??
-             IntervalHeartbeat(config: config.heartbeat, refGen: refGen),
+         heartbeat: heartbeat ?? IntervalHeartbeat(config: config.heartbeat),
          backoff: backoff ?? ExponentialBackoff(config: config.reconnect),
        ),
        router = FrameRouter<T>(

@@ -1,9 +1,14 @@
 import 'dart:async';
 
 import 'package:socket_client/src/protocol/frame_codec.dart';
+import 'package:socket_client/src/protocol/socket_session.dart';
 import 'package:socket_client/src/protocol/topic_router.dart';
+import 'package:socket_client/src/ref_generator/ref_generator_i.dart';
+import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
+import 'package:socket_client/src/transport/interval_heartbeat.dart';
+import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/transport/socket_transport.dart';
 import 'package:socket_client/src/util/logger.dart';
 
@@ -28,16 +33,22 @@ import 'package:socket_client/src/util/logger.dart';
 /// await client.connect();
 /// client.emit(myFrame);
 /// ```
-class SocketClient<T> {
+class SocketClient<T> implements SocketSession<T> {
   SocketClient({
     required ConnectionConfig config,
     required FrameCodec<T> codec,
+    required RefGenerator refGen,
+    SocketHeartbeat? heartbeat,
+    BackoffStrategy? backoff,
     SocketLogger? logger,
-    this.onReconnected,
-  }) : _logger = logger ?? const SocketLogger(tag: 'SocketClient'),
+  }) : _refGen = refGen,
+       _logger = logger ?? const SocketLogger(tag: 'SocketClient'),
        transport = SocketTransport(
-         config: config,
          logger: logger ?? const SocketLogger(tag: 'Transport'),
+         heartbeat:
+             heartbeat ??
+             IntervalHeartbeat(config: config.heartbeat, refGen: refGen),
+         backoff: backoff ?? ExponentialBackoff(config: config.reconnect),
        ),
        router = TopicRouter<T>(
          codec: codec,
@@ -46,6 +57,8 @@ class SocketClient<T> {
     _wire();
   }
 
+  final RefGenerator _refGen;
+
   /// Access the underlying transport for advanced use.
   final SocketTransport transport;
 
@@ -53,10 +66,6 @@ class SocketClient<T> {
   final TopicRouter<T> router;
 
   final SocketLogger _logger;
-
-  /// Called after each successful reconnect. Use this to re-authenticate,
-  /// rejoin channels, or resend any application-level handshake.
-  final Future<void> Function()? onReconnected;
 
   final List<StreamSubscription<dynamic>> _subs = [];
   bool _disposed = false;
@@ -75,6 +84,24 @@ class SocketClient<T> {
   /// All decoded inbound frames regardless of topic.
   Stream<T> get allFrames => router.allFrames;
 
+  /// Called once after the first successful connection.
+  Future<void> onConnected() {
+    // no-op
+    return Future.syncValue(null);
+  }
+
+  /// Called after every successful reconnect.
+  Future<void> onReconnected() {
+    // no-op
+    return Future.syncValue(null);
+  }
+
+  /// Called when the transport reaches disconnected or failed.
+  Future<void> onDisconnected() {
+    // no-op
+    return Future.syncValue(null);
+  }
+
   //Actions
 
   Future<void> connect() async {
@@ -82,9 +109,11 @@ class SocketClient<T> {
     await transport.connect();
   }
 
-  Future<void> disconnect({int? closeCode, String? closeReason}) async {
-    await transport.disconnect(closeCode: closeCode, closeReason: closeReason);
-  }
+  Future<void> disconnect({int? closeCode, String? closeReason}) =>
+      transport.disconnect(
+        closeCode: closeCode,
+        closeReason: closeReason,
+      );
 
   /// Encode [frame] and send it immediately.
   void emit(T frame) {
@@ -116,21 +145,39 @@ class SocketClient<T> {
     // Route raw text frames into the protocol layer.
     _subs.add(transport.textStream.listen(router.ingest));
 
-    // Invoke reconnect hook on each successful connect after the first.
     var firstConnect = true;
     _subs.add(
       transport.stateStream.listen((state) async {
-        if (state == SocketConnectionState.connected) {
-          if (firstConnect) {
-            firstConnect = false;
-            return;
-          }
-          _logger.info('Reconnected — invoking onReconnected hook');
-          try {
-            await onReconnected?.call();
-          } on Exception catch (e) {
-            _logger.error('onReconnected hook threw: $e');
-          }
+        switch (state) {
+          case SocketConnectionState.connected:
+            if (firstConnect) {
+              firstConnect = false;
+              _logger.info('Connected — invoking onConnected hook');
+              try {
+                await onConnected();
+              } on Exception catch (e) {
+                _logger.error('onConnected hook threw: $e');
+              }
+            } else {
+              _logger.info('Reconnected — invoking onReconnected hook');
+              try {
+                await onReconnected();
+              } on Exception catch (e) {
+                _logger.error('onReconnected hook threw: $e');
+              }
+            }
+
+          case SocketConnectionState.disconnected:
+          case SocketConnectionState.failed:
+            try {
+              await onDisconnected();
+            } on Exception catch (e) {
+              _logger.error('onDisconnected hook threw: $e');
+            }
+          case SocketConnectionState.connecting:
+          case SocketConnectionState.reconnecting:
+          case SocketConnectionState.disconnecting:
+            break;
         }
       }),
     );

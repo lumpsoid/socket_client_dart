@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
+import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/util/logger.dart';
 
 /// Raw WebSocket transport: reconnect, heartbeat, TLS. No protocol assumptions.
@@ -19,20 +20,19 @@ import 'package:socket_client/src/util/logger.dart';
 /// ```
 class SocketTransport {
   SocketTransport({
-    required ConnectionConfig config,
+    required SocketHeartbeat heartbeat,
+    required BackoffStrategy backoff,
     SocketLogger? logger,
-    BackoffStrategy? backoff,
-  }) : _config = config,
-       _logger = logger ?? const SocketLogger(tag: 'Transport'),
-       _backoff = backoff ?? ExponentialBackoff(config: config.reconnect);
+  }) : _logger = logger ?? const SocketLogger(tag: 'Transport'),
+       _backoff = backoff,
+       _heartbeat = heartbeat;
 
-  final ConnectionConfig _config;
   final SocketLogger _logger;
   final BackoffStrategy _backoff;
 
+  final SocketHeartbeat _heartbeat;
+
   WebSocket? _socket;
-  Timer? _heartbeatTimer;
-  Timer? _heartbeatTimeoutTimer;
   Timer? _reconnectTimer;
   Completer<void>? _connectionLock;
 
@@ -252,25 +252,9 @@ class SocketTransport {
 
   //Heartbeat
 
-  void _startHeartbeat() {
-    if (!_config.heartbeat.enabled) return;
-    _heartbeatTimer?.cancel();
-    _heartbeatTimer = Timer.periodic(_config.heartbeat.interval, (_) {
-      if (!isConnected) return;
-      try {
-        _socket!.add(_config.heartbeat.pingMessage);
-        _logger.debug('Heartbeat ping');
-        _startHeartbeatTimeout();
-      } on Exception catch (e) {
-        _logger.error('Failed to send heartbeat: $e');
-      }
-    });
-  }
-
-  void _startHeartbeatTimeout() {
-    _heartbeatTimeoutTimer?.cancel();
-    _heartbeatTimeoutTimer = Timer(_config.heartbeat.pongTimeout, () async {
-      _logger.warn('Heartbeat pong timeout');
+  void _startHeartbeat() => _heartbeat.start(
+    send: (frame) => _socket!.add(frame),
+    onTimeout: () async {
       _emitError(
         SocketError(
           type: SocketErrorType.heartbeatTimeout,
@@ -279,10 +263,10 @@ class SocketTransport {
         ),
       );
       await _socket?.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
-    });
-  }
+    },
+  );
 
-  void _resetHeartbeatTimeout() => _heartbeatTimeoutTimer?.cancel();
+  void _resetHeartbeatTimeout() => _heartbeat.didReceiveFrame();
 
   //Reconnect
 
@@ -343,8 +327,7 @@ class SocketTransport {
   }
 
   void _cancelTimers() {
-    _heartbeatTimer?.cancel();
-    _heartbeatTimeoutTimer?.cancel();
+    _heartbeat.stop();
     _reconnectTimer?.cancel();
   }
 

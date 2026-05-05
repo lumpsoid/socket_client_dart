@@ -5,11 +5,12 @@ import 'package:socket_client/src/transport/heartbeat_ping_builder.dart';
 import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/util/logger.dart';
 
-/// Default heartbeat implementation driven by a fixed [Timer.periodic] interval.
+/// Default heartbeat implementation driven by a fixed [Timer.periodic] interval
 ///
 /// Behaviour:
 /// - Sends a ping frame every [HeartbeatConfig.interval].
-/// - Starts a pong-timeout window ([HeartbeatConfig.pongTimeout]) after each ping.
+/// - Starts a pong-timeout window ([HeartbeatConfig.pongTimeout]) after each
+/// ping.
 /// - Any inbound frame ([didReceiveFrame]) cancels the active timeout window —
 ///   the next ping resets the cycle.
 /// - Calls [PongTimeoutCallback] once if no frame arrives within the timeout.

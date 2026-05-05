@@ -8,7 +8,8 @@
 ///
 /// Optional add-ons:
 /// - [SocketClient] — thin facade over transport + router
-/// - [QueuedTransport] — offline-buffering wrapper - [TransportMiddlewarePipeline] — raw-frame middleware (logging, gzip,
+/// - [QueuedTransport] — offline-buffering wrapper -
+/// [TransportMiddlewarePipeline] — raw-frame middleware (logging, gzip,
 /// rate-limit)
 /// - [ConnectivityMonitor] — network status observation
 /// - [NetworkAwareReconnector] — auto reconnect on network restore

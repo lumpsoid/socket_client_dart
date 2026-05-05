@@ -21,7 +21,7 @@ class QueuedTransport<T> {
        _codec = codec,
        _queue = queue ?? MessageQueue<T>(),
        _logger = logger ?? const SocketLogger(tag: 'QueuedTransport') {
-    _transport.stateStream.listen(_onStateChange);
+    _stateSub = _transport.stateStream.listen(_onStateChange);
   }
 
   final SocketTransport _transport;
@@ -36,6 +36,8 @@ class QueuedTransport<T> {
   Stream<QueuedFrame<T>> get droppedFrames => _queue.dropped;
 
   bool get isConnected => _transport.isConnected;
+
+  StreamSubscription<SocketConnectionState>? _stateSub;
 
   /// Send a frame. If disconnected, the frame is queued.
   void send(
@@ -86,6 +88,7 @@ class QueuedTransport<T> {
   }
 
   Future<void> dispose() async {
+    await _stateSub?.cancel();
     await _queue.dispose();
     await _transport.dispose();
   }

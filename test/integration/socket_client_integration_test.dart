@@ -52,7 +52,7 @@ void main() {
     server = TestSocketServer();
     await server.start();
 
-    client = SocketClient<_Msg>(
+    client = DefaultSocketClient<_Msg>(
       config: ConnectionConfig(url: server.url),
       codec: _MsgCodec(),
       backoff: LinearBackoff(maxAttempts: -1),

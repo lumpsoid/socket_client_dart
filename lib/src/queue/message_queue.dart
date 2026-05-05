@@ -83,6 +83,13 @@ class MessageQueue<T> {
 
     if (_size >= maxSize) {
       if (!_evictLowest(priority)) {
+        final dropped = QueuedFrame(
+          encoded: encoded,
+          frame: frame,
+          priority: priority,
+          ttl: ttl,
+        );
+        _droppedController.add(dropped);
         _logger.warn('Queue full; dropping frame');
         return false;
       }

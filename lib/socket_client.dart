@@ -33,7 +33,8 @@ import 'package:socket_client/src/queue/queued_transport.dart'
 import 'package:socket_client/src/transport/socket_transport.dart'
     show SocketTransport;
 
-// Facade
+// Client
+export 'src/client/default_socket_client.dart';
 export 'src/client/socket_client.dart';
 // Extensions
 export 'src/extensions/connectivity_monitor.dart';

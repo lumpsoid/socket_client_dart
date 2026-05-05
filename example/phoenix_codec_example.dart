@@ -80,7 +80,7 @@ class PhoenixCodec implements FrameCodec<PhoenixFrame> {
 
 Future<void> main() async {
   final refGen = MonotonicRefGenerator();
-  final client = SocketClient(
+  final client = DefaultSocketClient(
     config: const ConnectionConfig(
       url: 'wss://my-phoenix-server.com/socket/websocket',
     ),

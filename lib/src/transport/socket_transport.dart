@@ -264,6 +264,7 @@ class SocketTransport {
           timestamp: DateTime.now(),
         ),
       );
+      _heartbeat.stop();
       await _socket?.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
     },
   );

@@ -88,12 +88,14 @@ class SocketClient<T> implements SocketSession<T> {
       );
 
   /// Encode [frame] and send it immediately.
+  @override
   void emit(T frame) {
     _assertNotDisposed();
     router.emit(frame, send: transport.sendText);
   }
 
   /// Send [frame] and await a correlated reply.
+  @override
   Future<T> request(T frame, {Duration timeout = const Duration(seconds: 30)}) {
     _assertNotDisposed();
     return router.request(frame, send: transport.sendText, timeout: timeout);

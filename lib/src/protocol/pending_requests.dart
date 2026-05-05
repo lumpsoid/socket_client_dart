@@ -48,13 +48,15 @@ class PendingRequests<T> {
     final entry = _entries.remove(correlationId);
     if (entry == null) return;
     entry.timer.cancel();
-    entry.completer.complete(frame);
     _logger.debug('Resolved request $correlationId');
+    entry.completer.complete(frame);
   }
 
   /// Cancel all pending requests with a [SocketError].
   void dispose() {
-    for (final entry in _entries.values) {
+    final entries = _entries.values.toList();
+    _entries.clear();
+    for (final entry in entries) {
       entry.timer.cancel();
       if (!entry.completer.isCompleted) {
         entry.completer.completeError(
@@ -66,7 +68,6 @@ class PendingRequests<T> {
         );
       }
     }
-    _entries.clear();
   }
 }
 

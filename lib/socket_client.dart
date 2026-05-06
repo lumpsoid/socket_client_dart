@@ -54,6 +54,7 @@ export 'src/ref_generator/ref_generator_i.dart';
 // Transport
 export 'src/transport/backoff_strategy.dart';
 export 'src/transport/connection_config.dart';
+export 'src/transport/connection_config_provider.dart';
 export 'src/transport/connection_state.dart';
 export 'src/transport/heartbeat_ping_builder.dart';
 export 'src/transport/interval_framed_heartbeat.dart';

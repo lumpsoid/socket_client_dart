@@ -5,6 +5,7 @@ import 'package:socket_client/src/protocol/frame_codec.dart';
 import 'package:socket_client/src/protocol/topic_router.dart';
 import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config.dart';
+import 'package:socket_client/src/transport/connection_config_provider.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
 import 'package:socket_client/src/transport/interval_heartbeat.dart';
 import 'package:socket_client/src/transport/socket_heartbeat.dart';
@@ -30,7 +31,7 @@ import 'package:socket_client/src/util/logger.dart';
 /// ```
 class DefaultSocketClient<T> implements SocketClient<T> {
   DefaultSocketClient({
-    required ConnectionConfig config,
+    required ConnectionConfigProvider config,
     required FrameCodec<T> codec,
     SocketHeartbeat? heartbeat,
     ReconnectionStrategy? backoff,

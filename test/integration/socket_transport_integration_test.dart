@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config.dart';
+import 'package:socket_client/src/transport/connection_config_provider.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
 import 'package:socket_client/src/transport/interval_heartbeat.dart';
 import 'package:socket_client/src/transport/socket_transport.dart';
@@ -18,7 +19,8 @@ void main() {
     await server.start();
 
     transport = SocketTransport(
-      config: ConnectionConfig(url: server.url),
+      config: ConstantConfigProvider( ConnectionConfig(url: server.url)),
+
       heartbeat: IntervalHeartbeat(
         config: const HeartbeatConfig(
           enabled: false, // disable for most tests

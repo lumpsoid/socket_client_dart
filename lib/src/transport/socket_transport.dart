@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:socket_client/src/transport/backoff_strategy.dart';
-import 'package:socket_client/src/transport/connection_config.dart';
+import 'package:socket_client/src/transport/connection_config_provider.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
 import 'package:socket_client/src/transport/socket_heartbeat.dart';
 import 'package:socket_client/src/util/logger.dart';
@@ -20,7 +20,7 @@ import 'package:socket_client/src/util/logger.dart';
 /// ```
 class SocketTransport {
   SocketTransport({
-    required ConnectionConfig config,
+    required ConnectionConfigProvider config,
     required SocketHeartbeat heartbeat,
     ReconnectionStrategy? backoff,
     SocketLogger? logger,
@@ -29,7 +29,7 @@ class SocketTransport {
        _reconnectionStrategy = backoff,
        _heartbeat = heartbeat;
 
-  final ConnectionConfig _connectionConfig;
+  final ConnectionConfigProvider _connectionConfig;
   final SocketLogger _logger;
   final ReconnectionStrategy? _reconnectionStrategy;
 
@@ -144,17 +144,18 @@ class SocketTransport {
   Future<void> _doConnect() async {
     _transitionTo(SocketConnectionState.connecting);
     try {
-      _logger.info('Connecting to ${_connectionConfig.url}');
+      final c = _connectionConfig.provideConfig();
+      _logger.info('Connecting to ${c.url}');
       _socket =
           await WebSocket.connect(
-            _connectionConfig.url,
-            headers: _connectionConfig.headers,
-            protocols: _connectionConfig.protocols,
+            c.url,
+            headers: c.headers,
+            protocols: c.protocols,
           ).timeout(
-            _connectionConfig.connectTimeout,
+            c.connectTimeout,
             onTimeout: () => throw TimeoutException(
               'Connection timed out after'
-              ' ${_connectionConfig.connectTimeout.inSeconds}s',
+              ' ${c.connectTimeout.inSeconds}s',
             ),
           );
 

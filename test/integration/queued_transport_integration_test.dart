@@ -40,12 +40,11 @@ void main() {
   group('QueuedTransport integration', () {
     test('frames sent while disconnected are flushed on reconnect', () async {
       final transport = SocketTransport(
-        config: ConnectionConfig(url: server.url),
+        config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
         heartbeat: IntervalHeartbeat(
           config: const HeartbeatConfig(enabled: false),
         ),
         backoff: LinearBackoff(maxAttempts: -1),
-       
       );
       final queued =
           QueuedTransport<_F>(
@@ -71,7 +70,7 @@ void main() {
 
     test('frames sent while connected are delivered immediately', () async {
       final transport = SocketTransport(
-        config: ConnectionConfig(url: server.url),
+        config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
         heartbeat: IntervalHeartbeat(
           config: const HeartbeatConfig(enabled: false),
         ),
@@ -96,7 +95,7 @@ void main() {
 
     test('dropped frames are emitted on droppedFrames stream', () async {
       final transport = SocketTransport(
-        config: ConnectionConfig(url: server.url),
+        config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
         heartbeat: IntervalHeartbeat(
           config: const HeartbeatConfig(enabled: false),
         ),

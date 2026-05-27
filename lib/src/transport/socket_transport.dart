@@ -87,7 +87,6 @@ class SocketTransport {
 
     _connectionLock = Completer<void>();
     try {
-      _intentionalClose = false;
       await _doConnect();
       _connectionLock!.complete();
     } catch (e, st) {
@@ -158,6 +157,8 @@ class SocketTransport {
               ' ${c.connectTimeout.inSeconds}s',
             ),
           );
+
+      _intentionalClose = false;
 
       _reconnectionStrategy?.reset();
       _connectedAt = DateTime.now();

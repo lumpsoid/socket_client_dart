@@ -50,6 +50,40 @@ class ExponentialBackoff implements ReconnectionStrategy {
   void reset() => _attempt = 0;
 }
 
+/// Constant backoff: every retry waits the same fixed [delay].
+///
+/// Simplest strategy — no growth, no jitter. Useful when retries should poll at
+/// a steady cadence.
+class ConstantBackoff implements ReconnectionStrategy {
+  ConstantBackoff({
+    this.delay = const Duration(seconds: 1),
+    this.maxAttempts = -1,
+  });
+
+  final Duration delay;
+
+  /// -1 signals unlimited
+  @override
+  final int maxAttempts;
+
+  int _attempt = 0;
+
+  @override
+  int get attempt => _attempt;
+
+  @override
+  Duration nextDelay() {
+    _attempt++;
+    return delay;
+  }
+
+  @override
+  void reset() => _attempt = 0;
+
+  @override
+  bool get isExhausted => maxAttempts != -1 && _attempt >= maxAttempts;
+}
+
 /// Linear backoff: delay = initialDelay + step × attempt, capped at maxDelay.
 class LinearBackoff implements ReconnectionStrategy {
   LinearBackoff({

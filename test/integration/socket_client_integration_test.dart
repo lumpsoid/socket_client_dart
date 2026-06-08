@@ -53,7 +53,7 @@ void main() {
     await server.start();
 
     client = DefaultSocketClient<_Msg>(
-      config: ConnectionConfig(url: server.url),
+      config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
       codec: _MsgCodec(),
       backoff: LinearBackoff(maxAttempts: -1),
     );

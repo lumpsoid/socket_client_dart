@@ -57,6 +57,7 @@ export 'src/transport/connection_config.dart';
 export 'src/transport/connection_config_provider.dart';
 export 'src/transport/connection_state.dart';
 export 'src/transport/heartbeat_ping_builder.dart';
+export 'src/transport/in_memory_heartbeat.dart';
 export 'src/transport/interval_framed_heartbeat.dart';
 export 'src/transport/interval_heartbeat.dart';
 export 'src/transport/socket_heartbeat.dart';

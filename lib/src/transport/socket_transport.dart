@@ -36,6 +36,7 @@ class SocketTransport {
   final SocketHeartbeat _heartbeat;
 
   WebSocket? _socket;
+  StreamSubscription<dynamic>? _subscription;
   Timer? _reconnectTimer;
   Completer<void>? _connectionLock;
 
@@ -112,6 +113,8 @@ class SocketTransport {
   Future<void> disconnect({int? closeCode, String? closeReason}) async {
     _intentionalClose = true;
     _cancelTimers();
+    await _subscription?.cancel();
+    _subscription = null;
     _transitionTo(SocketConnectionState.disconnecting);
     try {
       await _socket?.close(
@@ -145,18 +148,22 @@ class SocketTransport {
     try {
       final c = _connectionConfig.provideConfig();
       _logger.info('Connecting to ${c.url}');
-      _socket =
-          await WebSocket.connect(
-            c.url,
-            headers: c.headers,
-            protocols: c.protocols,
-          ).timeout(
-            c.connectTimeout,
-            onTimeout: () => throw TimeoutException(
-              'Connection timed out after'
-              ' ${c.connectTimeout.inSeconds}s',
-            ),
-          );
+      final socket = await WebSocket.connect(
+        c.url,
+        headers: c.headers,
+        protocols: c.protocols,
+      ).timeout(
+        c.connectTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Connection timed out after'
+          ' ${c.connectTimeout.inSeconds}s',
+        ),
+      );
+
+      // Kill the previous listener before swapping, so a late onDone from the
+      // old connection can never drive reconnect logic on the new socket.
+      await _subscription?.cancel();
+      _socket = socket;
 
       _intentionalClose = false;
 
@@ -164,8 +171,8 @@ class SocketTransport {
       _connectedAt = DateTime.now();
       _transitionTo(SocketConnectionState.connected);
       _logger.info('Connected');
-      _startHeartbeat();
-      _listenToSocket();
+      _startHeartbeat(socket);
+      _listenToSocket(socket);
     } on TimeoutException catch (e) {
       _handleFailure(
         SocketError(
@@ -214,8 +221,8 @@ class SocketTransport {
     }
   }
 
-  void _listenToSocket() {
-    _socket!.listen(
+  void _listenToSocket(WebSocket socket) {
+    _subscription = socket.listen(
       (data) {
         _lastMessageAt = DateTime.now();
         _resetHeartbeatTimeout();
@@ -239,8 +246,8 @@ class SocketTransport {
       },
       onDone: () {
         _logger.info(
-          'Connection closed: code=${_socket?.closeCode} '
-          'reason=${_socket?.closeReason}',
+          'Connection closed: code=${socket.closeCode} '
+          'reason=${socket.closeReason}',
         );
         _cancelTimers();
         if (!_intentionalClose) {
@@ -256,8 +263,8 @@ class SocketTransport {
 
   //Heartbeat
 
-  void _startHeartbeat() => _heartbeat.start(
-    send: (frame) => _socket!.add(frame),
+  void _startHeartbeat(WebSocket socket) => _heartbeat.start(
+    send: (frame) => socket.add(frame),
     onTimeout: () async {
       _emitError(
         SocketError(
@@ -267,7 +274,7 @@ class SocketTransport {
         ),
       );
       _heartbeat.stop();
-      await _socket?.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
+      await socket.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
     },
   );
 

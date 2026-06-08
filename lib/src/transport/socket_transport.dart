@@ -6,6 +6,7 @@ import 'package:socket_client/src/transport/backoff_strategy.dart';
 import 'package:socket_client/src/transport/connection_config_provider.dart';
 import 'package:socket_client/src/transport/connection_state.dart';
 import 'package:socket_client/src/transport/socket_heartbeat.dart';
+import 'package:socket_client/src/transport/transport_logic.dart';
 import 'package:socket_client/src/util/logger.dart';
 
 /// Raw WebSocket transport: reconnect, heartbeat, TLS. No protocol assumptions.
@@ -71,10 +72,7 @@ class SocketTransport {
   DateTime? get connectedAt => _connectedAt;
   DateTime? get lastMessageAt => _lastMessageAt;
 
-  Duration? get connectionUptime {
-    if (_connectedAt == null) return null;
-    return DateTime.now().difference(_connectedAt!);
-  }
+  Duration? get connectionUptime => uptimeSince(_connectedAt, DateTime.now());
 
   //Lifecycle
 
@@ -173,51 +171,8 @@ class SocketTransport {
       _logger.info('Connected');
       _startHeartbeat(socket);
       _listenToSocket(socket);
-    } on TimeoutException catch (e) {
-      _handleFailure(
-        SocketError(
-          type: SocketErrorType.timeout,
-          message: e.message ?? 'Connection timeout',
-          timestamp: DateTime.now(),
-        ),
-      );
-    } on SocketException catch (e) {
-      _handleFailure(
-        SocketError(
-          type: SocketErrorType.network,
-          message: 'Socket error: ${e.message}',
-          timestamp: DateTime.now(),
-          originalError: e,
-        ),
-      );
-    } on WebSocketException catch (e) {
-      _handleFailure(
-        SocketError(
-          type: SocketErrorType.protocol,
-          message: 'WebSocket error: ${e.message}',
-          timestamp: DateTime.now(),
-          originalError: e,
-        ),
-      );
-    } on HandshakeException catch (e) {
-      _handleFailure(
-        SocketError(
-          type: SocketErrorType.tls,
-          message: 'TLS handshake failed: ${e.message}',
-          timestamp: DateTime.now(),
-          originalError: e,
-        ),
-      );
     } on Exception catch (e, st) {
-      _handleFailure(
-        SocketError(
-          type: SocketErrorType.unknown,
-          message: 'Unexpected error: $e',
-          timestamp: DateTime.now(),
-          originalError: e,
-          stackTrace: st,
-        ),
-      );
+      _handleFailure(classifyConnectError(e, st, DateTime.now()));
     }
   }
 
@@ -234,15 +189,7 @@ class SocketTransport {
       },
       onError: (Object error, StackTrace stackTrace) {
         _logger.error('Stream error: $error');
-        _emitError(
-          SocketError(
-            type: SocketErrorType.stream,
-            message: 'Stream error: $error',
-            timestamp: DateTime.now(),
-            originalError: error,
-            stackTrace: stackTrace,
-          ),
-        );
+        _emitError(streamError(error, stackTrace, DateTime.now()));
       },
       onDone: () {
         _logger.info(
@@ -250,7 +197,7 @@ class SocketTransport {
           'reason=${socket.closeReason}',
         );
         _cancelTimers();
-        if (!_intentionalClose) {
+        if (shouldReconnectOnClose(intentionalClose: _intentionalClose)) {
           _transitionTo(SocketConnectionState.reconnecting);
           _scheduleReconnect();
         } else {
@@ -266,13 +213,7 @@ class SocketTransport {
   void _startHeartbeat(WebSocket socket) => _heartbeat.start(
     send: (frame) => socket.add(frame),
     onTimeout: () async {
-      _emitError(
-        SocketError(
-          type: SocketErrorType.heartbeatTimeout,
-          message: 'No pong within pong timeout',
-          timestamp: DateTime.now(),
-        ),
-      );
+      _emitError(heartbeatTimeoutError(DateTime.now()));
       _heartbeat.stop();
       await socket.close(WebSocketStatus.goingAway, 'Heartbeat timeout');
     },
@@ -285,11 +226,15 @@ class SocketTransport {
   void _handleFailure(SocketError error) {
     _logger.error('Connection failure: ${error.message}');
     _emitError(error);
-    if (!_intentionalClose && _reconnectionStrategy != null) {
-      _transitionTo(SocketConnectionState.reconnecting);
-      _scheduleReconnect();
-    } else {
-      _transitionTo(SocketConnectionState.failed);
+    switch (decideFailure(
+      intentionalClose: _intentionalClose,
+      hasStrategy: _reconnectionStrategy != null,
+    )) {
+      case FailureOutcome.reconnect:
+        _transitionTo(SocketConnectionState.reconnecting);
+        _scheduleReconnect();
+      case FailureOutcome.fail:
+        _transitionTo(SocketConnectionState.failed);
     }
   }
 
@@ -300,13 +245,7 @@ class SocketTransport {
       );
       _transitionTo(SocketConnectionState.failed);
       _emitError(
-        SocketError(
-          type: SocketErrorType.maxRetriesExceeded,
-          message:
-              'Exceeded ${_reconnectionStrategy.maxAttempts} reconnect'
-              ' attempts',
-          timestamp: DateTime.now(),
-        ),
+        maxRetriesError(_reconnectionStrategy.maxAttempts, DateTime.now()),
       );
       return;
     }

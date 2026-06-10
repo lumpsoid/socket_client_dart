@@ -253,24 +253,62 @@ void main() {
       );
       expect(dead.state, SocketConnectionState.failed);
     });
+
+    test(
+      'stays reconnecting across retries — no connecting flapping',
+      () async {
+        // Dead server: every attempt fails, so the transport runs the full
+        // backoff sequence before failing.
+        final dead = SocketTransport(
+          config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
+          heartbeat: InMemoryHeartbeat(),
+          backoff: ConstantBackoff(
+            delay: const Duration(milliseconds: 20),
+            maxAttempts: 3,
+          ),
+        );
+        addTearDown(dead.dispose);
+
+        final states = <SocketConnectionState>[];
+        dead.stateStream.listen(states.add);
+
+        await server.stop();
+        await dead.connect();
+        await pump(300);
+
+        // Exactly one `connecting` (the initial attempt) and a single stable
+        // `reconnecting` for the whole backoff sequence — retries do NOT flap
+        // back to `connecting` — ending in terminal `failed`.
+        expect(
+          states.where((s) => s == SocketConnectionState.connecting).length,
+          1,
+        );
+        expect(
+          states.where((s) => s == SocketConnectionState.reconnecting).length,
+          1,
+        );
+        expect(states.last, SocketConnectionState.failed);
+      },
+    );
   });
 
   group('stale-closure guard', () {
-    test('reconnect leaves exactly one live client (old socket dropped)',
-        () async {
-      await transport.connect();
-      expect(server.clientCount, 1);
+    test(
+      'reconnect leaves exactly one live client (old socket dropped)',
+      () async {
+        await transport.connect();
+        expect(server.clientCount, 1);
 
-      // Drop via pong-timeout: closes socket A, transport reconnects to B.
-      heartbeat.expireTimeout();
-      await Future<void>.delayed(const Duration(milliseconds: 300));
+        // Drop via pong-timeout: closes socket A, transport reconnects to B.
+        heartbeat.expireTimeout();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
 
-      expect(transport.isConnected, isTrue);
-      expect(server.clientCount, 1);
-    });
+        expect(transport.isConnected, isTrue);
+        expect(server.clientCount, 1);
+      },
+    );
 
-    test('only one reconnect per drop — no stale onDone double-fire',
-        () async {
+    test('only one reconnect per drop — no stale onDone double-fire', () async {
       final states = <SocketConnectionState>[];
       transport.stateStream.listen(states.add);
 
@@ -278,8 +316,9 @@ void main() {
       heartbeat.expireTimeout();
       await Future<void>.delayed(const Duration(milliseconds: 400));
 
-      final reconnects =
-          states.where((s) => s == SocketConnectionState.reconnecting).length;
+      final reconnects = states
+          .where((s) => s == SocketConnectionState.reconnecting)
+          .length;
       expect(reconnects, 1);
     });
 

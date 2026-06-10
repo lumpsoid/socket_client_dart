@@ -142,21 +142,29 @@ class SocketTransport {
   //Connection
 
   Future<void> _doConnect() async {
-    _transitionTo(SocketConnectionState.connecting);
+    // A retry scheduled by _scheduleReconnect stays `reconnecting` for the
+    // whole sequence — don't flap to `connecting` on every backoff attempt.
+    // Only a fresh connect (from disconnected/failed) is observable as
+    // `connecting`; once recovering, the state is a single stable
+    // `reconnecting` until it reaches `connected` or exhausts to `failed`.
+    if (_state != SocketConnectionState.reconnecting) {
+      _transitionTo(SocketConnectionState.connecting);
+    }
     try {
       final c = _connectionConfig.provideConfig();
       _logger.info('Connecting to ${c.url}');
-      final socket = await WebSocket.connect(
-        c.url,
-        headers: c.headers,
-        protocols: c.protocols,
-      ).timeout(
-        c.connectTimeout,
-        onTimeout: () => throw TimeoutException(
-          'Connection timed out after'
-          ' ${c.connectTimeout.inSeconds}s',
-        ),
-      );
+      final socket =
+          await WebSocket.connect(
+            c.url,
+            headers: c.headers,
+            protocols: c.protocols,
+          ).timeout(
+            c.connectTimeout,
+            onTimeout: () => throw TimeoutException(
+              'Connection timed out after'
+              ' ${c.connectTimeout.inSeconds}s',
+            ),
+          );
 
       // Kill the previous listener before swapping, so a late onDone from the
       // old connection can never drive reconnect logic on the new socket.

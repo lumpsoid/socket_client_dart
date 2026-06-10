@@ -255,6 +255,38 @@ void main() {
     });
 
     test(
+      'fresh connect after failed resets attempts and can recover',
+      () async {
+        // Dead server: exhaust all attempts so the transport reaches `failed`.
+        final port = server.boundPort;
+        final t = SocketTransport(
+          config: ConstantConfigProvider(ConnectionConfig(url: server.url)),
+          heartbeat: InMemoryHeartbeat(),
+          backoff: ConstantBackoff(
+            delay: const Duration(milliseconds: 20),
+            maxAttempts: 2,
+          ),
+        );
+        addTearDown(t.dispose);
+
+        await server.stop();
+        await t.connect();
+        await pump(200);
+        expect(t.state, SocketConnectionState.failed);
+
+        // Consumer asks for a fresh connection. The exhausted attempt count must
+        // be reset so the new attempt isn't killed before its first retry.
+        server = TestSocketServer(port: port);
+        await server.start();
+        await t.connect();
+        await pump(200);
+
+        expect(t.isConnected, isTrue);
+        expect(t.state, SocketConnectionState.connected);
+      },
+    );
+
+    test(
       'stays reconnecting across retries — no connecting flapping',
       () async {
         // Dead server: every attempt fails, so the transport runs the full

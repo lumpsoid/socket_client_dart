@@ -148,6 +148,10 @@ class SocketTransport {
     // `connecting`; once recovering, the state is a single stable
     // `reconnecting` until it reaches `connected` or exhausts to `failed`.
     if (_state != SocketConnectionState.reconnecting) {
+      // Fresh connect (from disconnected/failed), not a backoff retry. Clear any
+      // exhausted attempt count so a previous `failed` run can't immediately
+      // exhaust this one before it gets a single retry.
+      _reconnectionStrategy?.reset();
       _transitionTo(SocketConnectionState.connecting);
     }
     try {

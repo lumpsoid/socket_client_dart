@@ -70,11 +70,18 @@ class IntervalFramedHeartbeat<T> implements SocketHeartbeat {
   }
 
   void _startPongTimeout() {
-    _cancelPongTimeout();
-    _pongTimeoutTimer = Timer(_config.pongTimeout, _handlePongTimeout);
+    // Arm the pong-timeout only if one isn't already pending. An outbound ping
+    // is not proof of life, so it must not reset the timeout — otherwise, when
+    // pongTimeout >= interval, each ping would cancel the still-pending timer
+    // before it can fire and a silently dead link would never be detected.
+    // Only didReceiveFrame() (a genuine inbound frame) clears the timer.
+    _pongTimeoutTimer ??= Timer(_config.pongTimeout, _handlePongTimeout);
   }
 
   void _handlePongTimeout() {
+    // Clear the (now-fired) timer reference so a still-running heartbeat can
+    // re-arm on the next ping via _startPongTimeout's `??=`.
+    _pongTimeoutTimer = null;
     _logger.warn(
       'Pong timeout — no frame within ${_config.pongTimeout.inSeconds}s',
     );

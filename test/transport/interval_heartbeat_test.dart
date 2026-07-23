@@ -77,6 +77,34 @@ void main() {
       expect(timedOut, isFalse);
     });
 
+    test(
+      'onTimeout fires on silence even when pongTimeout >= interval',
+      () async {
+        // Regression test for a config footgun: when the pong-timeout is not
+        // strictly shorter than the ping interval, every outbound ping used to
+        // cancel + re-arm the still-pending pong-timeout timer before it could
+        // fire — so a silently dead link (no inbound frames ever) was never
+        // detected. An outbound ping must NOT reset the "have we heard from the
+        // server" clock; only didReceiveFrame() should.
+        final hb = IntervalHeartbeat(
+          config: const HeartbeatConfig(
+            enabled: true,
+            interval: Duration(milliseconds: 30),
+            pongTimeout: Duration(milliseconds: 30),
+            pingMessage: '__ping__',
+          ),
+        );
+        var timedOut = false;
+        // Never call didReceiveFrame() → the server is silent the whole time.
+        hb.start(send: (_) {}, onTimeout: () => timedOut = true);
+        // Wait for many ping cycles; with the bug this window elapses with the
+        // pong-timeout perpetually re-armed and timedOut still false.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        hb.stop();
+        expect(timedOut, isTrue);
+      },
+    );
+
     test('start when disabled is a no-op', () {
       final hb = IntervalHeartbeat(
         config: const HeartbeatConfig(enabled: false),
